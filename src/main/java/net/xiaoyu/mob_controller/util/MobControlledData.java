@@ -288,6 +288,9 @@ public class MobControlledData {
     public static void setControlMode(Mob mob, ControlMode mode) {
         LazyOptional<MobControlCapability> capability = mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY);
         capability.ifPresent(cap -> cap.setControlMode(mode));
+        if (mode == ControlMode.STAY) {
+            mob.getNavigation().stop();
+        }
     }
 
     /**

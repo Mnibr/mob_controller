@@ -137,10 +137,14 @@ public abstract class MixinLivingEntity extends Entity {
                 double x = player.xxa * 0.5;
                 double y = 0;
                 double z = player.zza;
-                if (z <= 0.0) {
-                    z *= 0.25;
-                }
+                if (z <= 0.0) z *= 0.25;
+
                 if (player instanceof AccessorLivingEntity accessor) {
+                    if (!(mob instanceof Guardian) && !(mob instanceof Dolphin)
+                            && accessor.mob_controller$getJumping() && this.isInWaterOrBubble()) {
+                        y += 0.8;
+                    }
+
                     if (mob instanceof Guardian || mob instanceof Dolphin) {
                         if (z != 0) {
                             double i = Math.cos(player.getXRot() * Math.PI / 180.0);
@@ -157,9 +161,8 @@ public abstract class MixinLivingEntity extends Entity {
                     } else if (accessor.mob_controller$getJumping() && mob.onGround() && !(mob instanceof PlayerRideableJumping)) {
                         mob.setOnGround(false);
                         double d0 = 0.5 * this.getBlockJumpFactor();
-                        double d1 = d0 + (mob.hasEffect(MobEffects.JUMP) ? 0.1 * mob.getEffect(MobEffects.JUMP).getAmplifier() + 1 : 0);
-                        Vec3 vec3 = mob.getDeltaMovement();
-                        mob.setDeltaMovement(vec3.x, d1, vec3.z);
+                        double d1 = d0 + (mob.hasEffect(MobEffects.JUMP) ? 0.1 * (mob.getEffect(MobEffects.JUMP).getAmplifier() + 1) : 0);
+                        mob.setDeltaMovement(mob.getDeltaMovement().x, d1, mob.getDeltaMovement().z);
                         mob.hasImpulse = true;
                         ForgeHooks.onLivingJump(mob);
                     }
