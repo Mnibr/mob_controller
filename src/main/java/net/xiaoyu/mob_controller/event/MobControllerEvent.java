@@ -487,9 +487,19 @@ public class MobControllerEvent {
         if (hasValidCombatTarget(mob)) {
             return true;
         }
-
-        return isValidCombatTarget(mob, mob.getLastHurtByMob())
-               || isValidCombatTarget(mob, mob.getLastHurtMob());
+        LivingEntity lastHurtBy = mob.getLastHurtByMob();
+        if (isValidCombatTarget(mob, lastHurtBy)) {
+            if (mob.tickCount - mob.getLastHurtByMobTimestamp() <= 10) {
+                return true;
+            }
+        }
+        LivingEntity lastHurt = mob.getLastHurtMob();
+        if (isValidCombatTarget(mob, lastHurt)) {
+            if (mob.tickCount - mob.getLastHurtMobTimestamp() <= 10) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isValidCombatTarget(Mob mob, @Nullable LivingEntity target) {

@@ -29,6 +29,9 @@ import net.minecraft.world.entity.monster.Phantom;
 import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Zoglin;
+import net.minecraft.world.entity.animal.Panda;
+import net.minecraft.world.entity.animal.PolarBear;
+import net.minecraft.world.entity.animal.goat.Goat;
 import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.monster.warden.AngerLevel;
 import net.minecraft.world.entity.monster.warden.Warden;
@@ -60,6 +63,14 @@ public class MobControlUtil {
     private static final String STAY_WELD_X = "x";
     private static final String STAY_WELD_Y = "y";
     private static final String STAY_WELD_Z = "z";
+    /**
+     * 判断生物是否为两栖动物（海龟或青蛙）。
+     * 两栖动物在传送时会根据控制者的位置智能选择水中或陆地传送点。
+     */
+    private static boolean isAmphibian(Mob mob) {
+        return mob.getType() == net.minecraft.world.entity.EntityType.TURTLE
+                || mob.getType() == net.minecraft.world.entity.EntityType.FROG;
+    }
 
     /**
      * 在每刻中处理被控制生物的跟随逻辑。
@@ -164,11 +175,18 @@ public class MobControlUtil {
                     }
 
                     // 传送
+// 传送
                     if (distanceSq > 196.0D && mob.getVehicle() == null) {
                         BlockPos controllerPos = controller.blockPosition();
 
-                        // 是否要传送到水中
-                        boolean needsWaterTeleport = mob.getMobType().equals(MobType.WATER);
+                        // 是否要传送到水中：原逻辑根据生物的水生类型判定，两栖动物根据控制者是否在水中动态判定
+                        boolean needsWaterTeleport;
+                        if (isAmphibian(mob)) {
+                            // 两栖动物：如果控制者完全浸没在水中，则传送到水中；否则传送到陆地
+                            needsWaterTeleport = isControllerFullySubmerged(controller);
+                        } else {
+                            needsWaterTeleport = mob.getMobType().equals(MobType.WATER);
+                        }
 
                         if (needsWaterTeleport) {
                             // 控制者是否在水中
@@ -184,7 +202,6 @@ public class MobControlUtil {
                             for (int i = 0; i < 3; i++) {
                                 BlockPos checkPos = controllerPos.below(i + 1);
                                 BlockState state = mob.level().getBlockState(checkPos);
-
                                 if (state.getFluidState().getType().equals(Fluids.EMPTY)) {
                                     nonFluidBlockFound = true;
                                     break;
@@ -231,7 +248,11 @@ public class MobControlUtil {
                || mob instanceof Ravager
                || mob instanceof Cow
                || mob instanceof Sheep
-               || mob instanceof Dolphin;
+               || mob instanceof Dolphin
+               || mob instanceof Panda
+               || mob instanceof PolarBear
+               || mob instanceof Goat
+               || mob.getType() == EntityType.SNIFFER;
     }
 
     /**
@@ -383,11 +404,11 @@ public class MobControlUtil {
         // 目标是否有自定义名称且与控制者名称相同
         /*if (controllerUUID != null) {
             Player targetController = MobControlledData.getController(controlledMob, controlledMob.level());
-            
+
             if (targetController != null) {
                 Component controllerName = targetController.getName();
                 Component targetName = target.getName();
-                
+
                 if (targetName != null && controllerName != null) {
                     if (targetName.getString().equals(controllerName.getString())) {
                         return false;
