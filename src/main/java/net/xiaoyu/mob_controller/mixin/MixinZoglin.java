@@ -4,6 +4,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Zoglin;
 import net.minecraft.world.entity.player.Player;
+import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -27,6 +28,12 @@ public class MixinZoglin {
         Zoglin zoglin = (Zoglin) (Object) this;
 
         if (MobControlledData.isControlledEntity(zoglin)) {
+            // 默认中立：仅在系统攻击（护主/反击/主人指令）期间允许造成伤害。
+            if (!MobControlledData.isSystemAttack(zoglin)) {
+                cir.setReturnValue(false);
+                return;
+            }
+
             if (target instanceof Player) {
                 if (target.getUUID().equals(MobControlledData.getControllerUUID(zoglin))) {
                     cir.cancel();
@@ -36,12 +43,19 @@ public class MixinZoglin {
     }
 
     /**
-     * 注入 {@code findNearestValidAttackTarget} 返回点：受控状态下不自动锁定目标。
+     * 注入 {@code findNearestValidAttackTarget} 返回点：受控状态下过滤控制者本人，其余目标按原版逻辑。
      */
     @Inject(method = "findNearestValidAttackTarget()Ljava/util/Optional;", at = @At("RETURN"), cancellable = true)
     private void injectFindNearestValidAttackTarget(CallbackInfoReturnable<Optional<? extends LivingEntity>> cir) {
-        if (MobControlledData.isControlledEntity((Zoglin) (Object) this)) {
-            cir.setReturnValue(Optional.empty());
+        Zoglin zoglin = (Zoglin) (Object) this;
+        if (MobControlledData.isControlledEntity(zoglin)) {
+            Optional<? extends LivingEntity> result = cir.getReturnValue();
+            if (result.isPresent()
+                && (!MobControlledData.isSystemAttack(zoglin)
+                    || !MobControlUtil.canKeepCombatTarget(zoglin, result.get())
+                    || MobControlUtil.isController(zoglin, result.get()))) {
+                cir.setReturnValue(Optional.empty());
+            }
         }
     }
 }

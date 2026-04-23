@@ -3,9 +3,9 @@ package net.xiaoyu.mob_controller.util;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.locale.Language;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
@@ -18,11 +18,18 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobType;
 import net.minecraft.world.entity.OwnableEntity;
 import net.minecraft.world.entity.ambient.Bat;
+import net.minecraft.world.entity.animal.Cow;
+import net.minecraft.world.entity.animal.Dolphin;
+import net.minecraft.world.entity.animal.Sheep;
 import net.minecraft.world.entity.animal.Squid;
 import net.minecraft.world.entity.monster.Blaze;
 import net.minecraft.world.entity.monster.Ghast;
+import net.minecraft.world.entity.monster.Guardian;
 import net.minecraft.world.entity.monster.Phantom;
+import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Vex;
+import net.minecraft.world.entity.monster.Zoglin;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.monster.warden.AngerLevel;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.player.Player;
@@ -215,6 +222,19 @@ public class MobControlUtil {
     }
 
     /**
+     * 判断受控生物是否属于当前支持直接骑乘的类型。
+     */
+    public static boolean isDirectRideableControlledMob(Mob mob) {
+        return mob instanceof Guardian
+               || mob instanceof Hoglin
+               || mob instanceof Zoglin
+               || mob instanceof Ravager
+               || mob instanceof Cow
+               || mob instanceof Sheep
+               || mob instanceof Dolphin;
+    }
+
+    /**
      * 对飞行/特殊 AI 生物应用停留坐标焊死。
      *
      * <p>首次调用会记录当前位置，后续每次强制瞬移回记录坐标并清空速度。</p>
@@ -347,6 +367,11 @@ public class MobControlUtil {
             return false;
         }
 
+        // 受控生物默认不主动敌对玩家，玩家仅能走防御反击链路。
+        if (target instanceof Player) {
+            return false;
+        }
+
         // 目标是否是控制者的宠物
         if (target instanceof OwnableEntity ownable) {
             if (controllerUUID != null) {
@@ -375,6 +400,111 @@ public class MobControlUtil {
     }
 
     /**
+     * 判定目标是否可作为受控生物的“防御反击”对象。
+     */
+    public static boolean canRetaliateAgainst(LivingEntity controlledMob, @Nullable LivingEntity target) {
+        if (target == null) {
+            return false;
+        }
+        if (isEnemy(controlledMob, target)) {
+            return true;
+        }
+        if (!(target instanceof Player player)) {
+            return false;
+        }
+        if (!MobControlledData.isControlledEntity(controlledMob)) {
+            return false;
+        }
+
+        UUID controllerUUID = MobControlledData.getControllerUUID(controlledMob);
+        if (controllerUUID == null
+            || controllerUUID.equals(player.getUUID())
+            || player.isCreative()
+            || player.isSpectator()) {
+            return false;
+        }
+
+        if (player.equals(controlledMob.getLastHurtByMob())) {
+            return true;
+        }
+
+        Player controller = MobControlledData.getController(controlledMob, controlledMob.level());
+        return controller != null && player.equals(controller.getLastHurtByMob());
+    }
+
+    /**
+     * 用于攻击事件上下文：攻击者已知时允许立即进入反击。
+     */
+    public static boolean canRetaliateAgainstImmediateAttacker(LivingEntity controlledMob, @Nullable LivingEntity attacker) {
+        if (!(attacker instanceof Player player)) {
+            return canRetaliateAgainst(controlledMob, attacker);
+        }
+        if (!MobControlledData.isControlledEntity(controlledMob)) {
+            return false;
+        }
+
+        UUID controllerUUID = MobControlledData.getControllerUUID(controlledMob);
+        return controllerUUID != null
+               && !controllerUUID.equals(player.getUUID())
+               && !player.isCreative()
+               && !player.isSpectator();
+    }
+
+    /**
+     * 判定目标玩家是否可作为“主人指令攻击”的合法对象。
+     *
+     * <p>该逻辑仅用于主人主动攻击某玩家后，受控生物是否允许协同攻击的场景，
+     * 与护主/反击逻辑相互独立。</p>
+     */
+    public static boolean canAttackPlayerByOwnerCommand(LivingEntity controlledMob, @Nullable LivingEntity target) {
+        if (!(target instanceof Player player)) {
+            return false;
+        }
+        if (!MobControlledData.isControlledEntity(controlledMob)) {
+            return false;
+        }
+        if (!Config.CONTROLLED_MOBS_ATTACK_PLAYERS_ON_COMMAND.get()) {
+            return false;
+        }
+
+        UUID controllerUUID = MobControlledData.getControllerUUID(controlledMob);
+        return controllerUUID != null
+               && !controllerUUID.equals(player.getUUID())
+               && !player.isCreative()
+               && !player.isSpectator();
+    }
+
+    /**
+     * 判断目标实体是否为受控生物的控制者本人。
+     *
+     * @param controlledMob 受控生物
+     * @param target        候选目标，可为 {@code null}
+     * @return {@code true} 表示目标即为控制者
+     */
+    public static boolean isController(LivingEntity controlledMob, @Nullable Entity target) {
+        if (target == null || !MobControlledData.isControlledEntity(controlledMob)) {
+            return false;
+        }
+        UUID controllerUUID = MobControlledData.getControllerUUID(controlledMob);
+        return controllerUUID != null && controllerUUID.equals(target.getUUID());
+    }
+
+    /**
+     * 判定目标是否允许继续作为当前战斗目标。
+     */
+    public static boolean canKeepCombatTarget(LivingEntity controlledMob, @Nullable LivingEntity target) {
+        return isEnemy(controlledMob, target)
+               || (
+                   controlledMob instanceof Mob mob
+                   && MobControlledData.isSystemAttack(mob)
+                   && (
+                       canRetaliateAgainst(controlledMob, target)
+                       || canAttackPlayerByOwnerCommand(controlledMob, target)
+                   )
+               );
+    }
+
+    /**
      * 设置生物攻击目标，并兼容监守者的愤怒系统。
      *
      * @param mob    发起攻击的生物
@@ -398,15 +528,15 @@ public class MobControlUtil {
      * @param args           格式化参数
      * @param color          文本颜色
      */
-    public static void showMessageToPlayer(Player player, String prefix, String translationKey, Object[] args, ChatFormatting color) {
+    public static void showMessageToPlayer(Player player, Component prefix, String translationKey, Object[] args, ChatFormatting color) {
         if (player instanceof ServerPlayer serverPlayer) {
-            String text = Language.getInstance().getOrDefault(translationKey);
-            String formattedText = args.length > 0 ? String.format(text, args) : text;
-
-            String messageText = !prefix.isEmpty() ? prefix + " " + formattedText : formattedText;
-
-            Component message = Component.literal(messageText).setStyle(Style.EMPTY.withColor(color));
-
+            MutableComponent message;
+            if (!prefix.toString().isEmpty()) {
+                message = Component.translatable("mob_controller.message.connection", prefix, Component.translatable(translationKey, args));
+            } else {
+                message = Component.translatable(translationKey, args);
+            }
+            message.setStyle(Style.EMPTY.withColor(color));
             serverPlayer.sendSystemMessage(message, true);
         }
     }

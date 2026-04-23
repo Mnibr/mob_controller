@@ -2,6 +2,7 @@ package net.xiaoyu.mob_controller.network;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import net.xiaoyu.mob_controller.item.MobControllerItem;
@@ -17,28 +18,14 @@ import java.util.function.Supplier;
  * <p>用于请求将玩家周围已控制生物批量切换到指定控制模式。</p>
  */
 
-public class ApplyControlCommandPacket {
-    /**
-     * 本次下发的目标控制模式。
-     */
-    private final MobControlledData.ControlMode mode;
-
-    /**
-     * 使用指定控制模式构造数据包。
-     *
-     * @param mode 目标控制模式
-     */
-    public ApplyControlCommandPacket(MobControlledData.ControlMode mode) {
-        this.mode = mode;
-    }
-
+public record ApplyControlCommandPacket(MobControlledData.ControlMode mode) {
     /**
      * 从网络缓冲区反序列化数据包。
      *
      * @param buf 网络字节缓冲
      */
     public ApplyControlCommandPacket(FriendlyByteBuf buf) {
-        this.mode = MobControlledData.ControlMode.values()[buf.readVarInt()];
+        this(MobControlledData.ControlMode.values()[buf.readVarInt()]);
     }
 
     /**
@@ -47,7 +34,7 @@ public class ApplyControlCommandPacket {
      * @param buf 网络字节缓冲
      */
     public void toBytes(FriendlyByteBuf buf) {
-        buf.writeVarInt(this.mode.ordinal());
+        buf.writeVarInt(this.mode().ordinal());
     }
 
     /**
@@ -64,9 +51,15 @@ public class ApplyControlCommandPacket {
                 return;
             }
 
-            int affectedCount = MobControllerItem.applyControlCommand(player, this.mode);
-            String modeKey = "mob_controller.mode." + this.mode.toString().toLowerCase();
-            MobControlUtil.showMessageToPlayer(player, "[" + affectedCount + "]", modeKey, new Object[]{}, ChatFormatting.GOLD);
+            int affectedCount = MobControllerItem.applyControlCommand(player, this.mode());
+            String modeKey = "mob_controller.mode." + this.mode().toString().toLowerCase();
+            MobControlUtil.showMessageToPlayer(
+                player,
+                Component.literal("[" + affectedCount + "]"),
+                modeKey,
+                new Object[]{},
+                ChatFormatting.GOLD
+            );
         });
         ctx.get().setPacketHandled(true);
     }

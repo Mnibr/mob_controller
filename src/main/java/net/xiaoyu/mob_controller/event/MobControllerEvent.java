@@ -12,11 +12,6 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.Animal;
-import net.minecraft.world.entity.animal.Cow;
-import net.minecraft.world.entity.animal.Dolphin;
-import net.minecraft.world.entity.animal.Sheep;
-import net.minecraft.world.entity.monster.Guardian;
-import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Zoglin;
 import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
@@ -24,7 +19,7 @@ import net.minecraft.world.entity.monster.piglin.Piglin;
 import net.minecraft.world.entity.monster.piglin.PiglinBrute;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
-import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.InputEvent;
@@ -49,7 +44,6 @@ import net.xiaoyu.mob_controller.entity.EntityControlledWitch;
 import net.xiaoyu.mob_controller.network.ApplyControlCommandPacket;
 import net.xiaoyu.mob_controller.network.MobControlCapabilitySyncPacket;
 import net.xiaoyu.mob_controller.network.NetWorkManager;
-import net.xiaoyu.mob_controller.network.ToggleControlModePacket;
 import net.xiaoyu.mob_controller.registry.ModItems;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
@@ -213,16 +207,18 @@ public class MobControllerEvent {
 
                     // 被控制的生物攻击攻击者[攻击者不是控制者]
                     if (!isController) {
-                        if (!MobControlUtil.isEnemy(mob, attacker)) {
+                        if (!MobControlUtil.canRetaliateAgainstImmediateAttacker(mob, attacker)) {
                             return;
                         }
+
+                        mob.setLastHurtByMob(attacker);
 
                         MobControlledData.markCombat(mob);
 
                         MobControlledData.markSystemAttack(mob);
 
                         // 疣猪兽/僵尸疣猪兽用ATTACK_TARGET内存模块
-                        if (mob instanceof Hoglin/*  || mob instanceof Zoglin */) {
+                        if (mob instanceof Hoglin || mob instanceof Zoglin) {
                             Brain<?> brain = mob.getBrain();
                             brain.eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
                             brain.setMemoryWithExpiry(MemoryModuleType.ATTACK_TARGET, attacker, Long.MAX_VALUE);
@@ -261,17 +257,22 @@ public class MobControllerEvent {
                                 LivingEntity attacker = getResponsibleLivingEntity(event.getSource().getEntity());
                                 if (attacker != null) {
 
-                                    if (!mob.equals(attacker) && mob.getTarget() == null) {
-                                        if (!MobControlUtil.isEnemy(mob, attacker)) {
+                                    boolean attackerIsOtherPlayer = attacker instanceof Player attackerPlayer
+                                                                    && !attackerPlayer.getUUID().equals(controllerUUID);
+
+                                    // 其他玩家攻击主人时，允许优先切换为护主目标。
+                                    if (!mob.equals(attacker) && (mob.getTarget() == null || attackerIsOtherPlayer)) {
+                                        if (!MobControlUtil.canRetaliateAgainstImmediateAttacker(mob, attacker)) {
                                             continue;
                                         }
 
-                                        MobControlledData.markCombat(mob);
+                                        player.setLastHurtByMob(attacker);
 
+                                        MobControlledData.markCombat(mob);
                                         MobControlledData.markSystemAttack(mob);
 
                                         // 疣猪兽/僵尸疣猪兽用ATTACK_TARGET内存模块
-                                        if (mob instanceof Hoglin/*  || mob instanceof Zoglin */) {
+                                        if (mob instanceof Hoglin || mob instanceof Zoglin) {
                                             Brain<?> brain = mob.getBrain();
                                             brain.eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
                                             brain.setMemoryWithExpiry(MemoryModuleType.ATTACK_TARGET, attacker, Long.MAX_VALUE);
@@ -312,10 +313,13 @@ public class MobControllerEvent {
                             if (controllerUUID != null && controllerUUID.equals(player.getUUID())) {
                                 if (event.getEntity() instanceof LivingEntity) {
                                     LivingEntity target = event.getEntity();
-                                    boolean isPlayer = target instanceof Player;
-
-                                    if (!mob.equals(target) && mob.getTarget() == null && !isPlayer) {
-                                        if (!MobControlUtil.isEnemy(mob, target)) {
+                                    LivingEntity currentTarget = mob.getTarget();
+                                    if (!mob.equals(target)
+                                        && (currentTarget == null || !MobControlUtil.canKeepCombatTarget(mob, currentTarget))) {
+                                        boolean canAttackTarget = target instanceof Player
+                                                                  ? MobControlUtil.canAttackPlayerByOwnerCommand(mob, target)
+                                                                  : MobControlUtil.isEnemy(mob, target);
+                                        if (!canAttackTarget) {
                                             continue;
                                         }
 
@@ -376,7 +380,8 @@ public class MobControllerEvent {
                         mob.setTarget(null);
                     }
 
-                    if (MobControlledData.isSystemAttack(mob)) {
+                    // Brain 类生物可能仅通过 ATTACK_TARGET 维持战斗，不应因 setTarget 为空而提前脱战。
+                    if (MobControlledData.isSystemAttack(mob) && !hasValidCombatTarget(mob)) {
                         MobControlledData.clearSystemAttack(mob);
                     }
                 }
@@ -415,41 +420,38 @@ public class MobControllerEvent {
             if (mode != null) {
                 NetWorkManager.INSTANCE.sendToServer(new ApplyControlCommandPacket(mode));
             }
-            return;
-        }
-
-        if (event.getButton() == InputConstants.MOUSE_BUTTON_RIGHT
-            && mc.hitResult instanceof EntityHitResult entityHitResult
-            && entityHitResult.getEntity() instanceof Mob mob
-            && !mc.player.getMainHandItem().is(ModItems.MOB_CONTROLLER_ITEM.get())
-            && !mc.player.getMainHandItem().is(ModItems.HEART_CONTRACT_ITEM.get())) {
-            NetWorkManager.INSTANCE.sendToServer(new ToggleControlModePacket(mob.getId()));
         }
     }
 
     /**
      * 玩家与可骑乘受控生物交互时，允许控制者直接骑乘。
      */
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onPlayerEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        if (event.getTarget() instanceof Mob mob
-            && !event.getEntity().getMainHandItem().is(ModItems.MOB_CONTROLLER_ITEM.get())
-            && !event.getEntity().getMainHandItem().is(ModItems.HEART_CONTRACT_ITEM.get())) {
-            if (mob instanceof Guardian ||
-                mob instanceof Hoglin ||
-                mob instanceof Zoglin ||
-                mob instanceof Ravager ||
-                mob instanceof Cow ||
-                mob instanceof Sheep ||
-                mob instanceof Dolphin) {
-                if (MobControlledData.isControlledEntity(mob) && Objects.equals(
-                    MobControlledData.getControllerUUID(mob),
-                    event.getEntity().getUUID()
-                )) {
-                    event.getEntity().startRiding(event.getTarget());
-                }
-            }
+        ItemStack mainHandItem = event.getEntity().getMainHandItem();
+        if (
+            !(event.getTarget() instanceof Mob mob)
+            || mainHandItem.is(ModItems.MOB_CONTROLLER_ITEM.get())
+            || mainHandItem.is(ModItems.HEART_CONTRACT_ITEM.get())
+            || event.getEntity().isShiftKeyDown()
+        ) {
+            return;
         }
+        if (!mainHandItem.isEmpty() || !MobControlUtil.isDirectRideableControlledMob(mob)) {
+            return;
+        }
+        if (
+            !MobControlledData.isControlledEntity(mob)
+            || !Objects.equals(
+                MobControlledData.getControllerUUID(mob),
+                event.getEntity().getUUID()
+            )
+        ) {
+            return;
+        }
+        event.getEntity().startRiding(event.getTarget());
+        event.setResult(Event.Result.ALLOW);
+        event.setCanceled(true);
     }
 
     /**
@@ -458,7 +460,8 @@ public class MobControllerEvent {
     @SubscribeEvent
     public static void onLivingChangeTargetEvent(LivingChangeTargetEvent event) {
         if (event.getEntity() instanceof Mob mob && event.getNewTarget() != null) {
-            if (MobControlledData.isControlledEntity(mob) && !MobControlUtil.isEnemy(mob, event.getNewTarget())) {
+            if (MobControlledData.isControlledEntity(mob)
+                && !MobControlUtil.canKeepCombatTarget(mob, event.getNewTarget())) {
                 if (!(mob instanceof EntityControlledWitch)) {
                     event.setCanceled(true);
                 }

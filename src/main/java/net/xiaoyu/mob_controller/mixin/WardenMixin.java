@@ -4,7 +4,6 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.player.Player;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
@@ -47,9 +46,14 @@ public class WardenMixin {
 
         if (entity instanceof LivingEntity livingEntity) {
 
-            // 被控制的监守者取消对非敌对目标的攻击欲望
+            // 被控制的监守者取消对非敌对目标的攻击欲望，但允许攻击非控制者玩家
             if (MobControlledData.isControlledEntity(warden)) {
-                if (!MobControlUtil.isEnemy(warden, livingEntity)) {
+                if (entity instanceof Player) {
+                    // 只阻止攻击控制者本人，其余玩家按原版逻辑
+                    if (MobControlUtil.isController(warden, entity)) {
+                        info.setReturnValue(false);
+                    }
+                } else if (!MobControlUtil.isEnemy(warden, livingEntity)) {
                     info.setReturnValue(false);
                 }
             }
@@ -63,8 +67,7 @@ public class WardenMixin {
     private void ignoreVibrationAngerWhenControlled(@Nullable Entity entity, int offset, boolean playListeningSound, CallbackInfo ci) {
         Warden warden = (Warden) (Object) this;
         if (MobControlledData.isControlledEntity(warden)
-            && playListeningSound
-            && warden.getBrain().hasMemoryValue(MemoryModuleType.VIBRATION_COOLDOWN)) {
+            && playListeningSound) {
             ci.cancel();
         }
     }
@@ -81,13 +84,13 @@ public class WardenMixin {
         }
 
         LivingEntity currentTarget = warden.getTarget();
-        if (currentTarget != null && !MobControlUtil.isEnemy(warden, currentTarget)) {
+        if (currentTarget != null && !MobControlUtil.canKeepCombatTarget(warden, currentTarget)) {
             warden.setTarget(null);
             warden.clearAnger(currentTarget);
         }
 
         Optional<LivingEntity> currentAngryTarget = warden.getEntityAngryAt();
-        if (currentAngryTarget.isPresent() && !MobControlUtil.isEnemy(warden, currentAngryTarget.get())) {
+        if (currentAngryTarget.isPresent() && !MobControlUtil.canKeepCombatTarget(warden, currentAngryTarget.get())) {
             warden.clearAnger(currentAngryTarget.get());
         }
 
@@ -101,7 +104,7 @@ public class WardenMixin {
             angryTarget = Optional.of(livingTarget);
         }
 
-        if (angryTarget.isPresent() && angryTarget.get() instanceof Player player && MobControlUtil.isEnemy(warden, player)) {
+        if (angryTarget.isPresent() && angryTarget.get() instanceof Player player && MobControlUtil.canKeepCombatTarget(warden, player)) {
             MobEffectInstance darkness = new MobEffectInstance(MobEffects.DARKNESS, CONTROLLED_WARDEN_DARKNESS_DURATION, 0, false, false);
             if (!player.hasEffect(MobEffects.DARKNESS)
                 || Objects.requireNonNull(player.getEffect(MobEffects.DARKNESS)).endsWithin(CONTROLLED_WARDEN_DARKNESS_REFRESH_MARGIN)) {
