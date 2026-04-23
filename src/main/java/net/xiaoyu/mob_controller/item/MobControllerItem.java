@@ -155,7 +155,7 @@ public class MobControllerItem extends Item {
                     return InteractionResult.PASS;
                 }
 
-                if (mob.getHealth() >= 10.0F) {
+                if (!Config.ALWAYS_SUCCESS.get() && mob.getHealth() > 10.0F) {
                     spawnParticles(mob, false);
                     return InteractionResult.FAIL;
                 }
