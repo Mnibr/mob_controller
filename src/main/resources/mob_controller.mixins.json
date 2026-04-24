@@ -44,7 +44,10 @@
     "WaterConversionMixin",
     "WitherBossMixin",
     "ZombieVillagerMixin",
-    "MixinPanda"
+    "MixinPanda",
+    "MixinEnderManStayNoTeleport",
+    "MixinShulkerStayNoTeleport",
+    "MixinWanderingTrader"
   ],
   "client": [
   ],
