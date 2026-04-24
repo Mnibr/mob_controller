@@ -13,6 +13,7 @@ import net.xiaoyu.mob_controller.entity.IControllableEntity;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -26,6 +27,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Mob.class)
 public abstract class MixinMob extends LivingEntity implements Targeting {
+
+    @Accessor("persistenceRequired")
+    public abstract void setPersistenceRequired(boolean required);
+
     protected MixinMob(EntityType<? extends LivingEntity> entityType, Level level) {
         super(entityType, level);
     }
