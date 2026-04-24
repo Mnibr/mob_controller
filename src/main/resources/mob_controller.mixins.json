@@ -47,7 +47,8 @@
     "MixinPanda",
     "MixinEnderManStayNoTeleport",
     "MixinShulkerStayNoTeleport",
-    "MixinWanderingTrader"
+    "MixinWanderingTrader",
+    "MixinCreeperRespawn"
   ],
   "client": [
   ],
