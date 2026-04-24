@@ -26,6 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Mob.class)
 public abstract class MixinMob extends LivingEntity implements Targeting {
+
     protected MixinMob(EntityType<? extends LivingEntity> entityType, Level level) {
         super(entityType, level);
     }

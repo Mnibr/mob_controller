@@ -8,6 +8,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.xiaoyu.mob_controller.util.MobControlledData;
+import net.minecraft.world.entity.monster.piglin.Piglin;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
+import java.lang.reflect.Field;
 
 import java.util.UUID;
 
@@ -57,6 +60,15 @@ public class HeartContractItem extends Item {
 
         mob.setTarget(null);
         MobControlledData.releaseControl(mob);
+
+        mob.persistenceRequired = false;
+
+        //if (mob instanceof Piglin piglin) {
+        //    piglin.setImmuneToZombification(false);
+        //} else if (mob instanceof Hoglin hoglin) {
+        //    hoglin.setImmuneToZombification(false);
+        //}
+
         return InteractionResult.SUCCESS;
     }
 }

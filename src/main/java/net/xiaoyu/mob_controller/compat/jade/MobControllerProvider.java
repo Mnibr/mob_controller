@@ -33,7 +33,7 @@ public class MobControllerProvider implements IEntityComponentProvider, IServerD
     }
 
     /**
-     * 在客户端提示框追加“控制者”信息。
+     * 在客户端提示框追加“控制者”信息和当前状态。
      */
     @Override
     public void appendTooltip(ITooltip tooltip, EntityAccessor accessor, IPluginConfig config) {
@@ -41,6 +41,12 @@ public class MobControllerProvider implements IEntityComponentProvider, IServerD
             String ownerName = accessor.getServerData().getString("MobControllerOwner");
             if (!(accessor.getEntity() instanceof OwnableEntity)) {
                 tooltip.add(Component.translatable("jade.mob_owner", ownerName));
+
+                // 新增：显示当前控制模式状态（跟随/停留/游荡）
+                if (accessor.getServerData().contains("MobControllerStatus")) {
+                    String statusKey = accessor.getServerData().getString("MobControllerStatus");
+                    tooltip.add(Component.translatable(statusKey));
+                }
             }
         }
     }
@@ -65,6 +71,26 @@ public class MobControllerProvider implements IEntityComponentProvider, IServerD
         if (controller != null) {
             data.putString("MobControllerOwner", controller);
         }
+
+        // 新增：写入当前控制模式对应的翻译键
+        String statusKey = getControlModeTranslationKey(mob);
+        if (statusKey != null) {
+            data.putString("MobControllerStatus", statusKey);
+        }
+    }
+
+    /**
+     * 获取生物当前控住模式的翻译键。
+     *
+     * @param mob 目标生物
+     * @return 翻译键（例如："mob_controller.mode.follow"），若未受控则返回 null
+     */
+    private static String getControlModeTranslationKey(Mob mob) {
+        if (!MobControlledData.isControlledEntity(mob)) {
+            return null;
+        }
+        MobControlledData.ControlMode mode = MobControlledData.getControlMode(mob);
+        return "mob_controller.mode." + mode.toString().toLowerCase();
     }
 
     /**
