@@ -1,6 +1,3 @@
-// ============================================================
-// 源文件: net.xiaoyu.mob_controller.CreativeTab.java
-// ============================================================
 package net.xiaoyu.mob_controller;
 
 import net.minecraft.core.registries.Registries;
