@@ -1,3 +1,8 @@
+// ============================================================
+// 源文件: net.xiaoyu.mob_controller.compat.jade.MobControllerProvider.java
+// ============================================================
+// 修改 appendTooltip 和 appendServerData 方法，增加模式显示。
+
 package net.xiaoyu.mob_controller.compat.jade;
 
 import net.minecraft.nbt.CompoundTag;
@@ -17,7 +22,7 @@ import snownee.jade.api.config.IPluginConfig;
 /**
  * Jade/WTHIT 实体信息提供器。
  *
- * <p>在提示框中展示受控生物的控制者名称，并由服务端下发所需数据。</p>
+ * <p>在提示框中展示受控生物的控制者名称，以及当前模式（护主/索敌）。</p>
  */
 public class MobControllerProvider implements IEntityComponentProvider, IServerDataProvider<EntityAccessor> {
 
@@ -47,6 +52,15 @@ public class MobControllerProvider implements IEntityComponentProvider, IServerD
                     String statusKey = accessor.getServerData().getString("MobControllerStatus");
                     tooltip.add(Component.translatable(statusKey));
                 }
+                // 新增：显示索敌/护主模式
+                if (accessor.getServerData().contains("MobControllerAggressive")) {
+                    boolean aggressive = accessor.getServerData().getBoolean("MobControllerAggressive");
+                    if (aggressive) {
+                        tooltip.add(Component.translatable("mob_controller.mode.aggressive"));
+                    } else {
+                        tooltip.add(Component.translatable("mob_controller.mode.protective"));
+                    }
+                }
             }
         }
     }
@@ -72,11 +86,15 @@ public class MobControllerProvider implements IEntityComponentProvider, IServerD
             data.putString("MobControllerOwner", controller);
         }
 
-        // 新增：写入当前控制模式对应的翻译键
+        // 写入当前控制模式对应的翻译键
         String statusKey = getControlModeTranslationKey(mob);
         if (statusKey != null) {
             data.putString("MobControllerStatus", statusKey);
         }
+
+        // 新增：写入索敌模式状态
+        boolean aggressive = MobControlledData.isAggressiveMode(mob);
+        data.putBoolean("MobControllerAggressive", aggressive);
     }
 
     /**
