@@ -1,8 +1,3 @@
-// ============================================================
-// 源文件: net.xiaoyu.mob_controller.compat.jade.MobControllerProvider.java
-// ============================================================
-// 修改 appendTooltip 和 appendServerData 方法，增加模式显示。
-
 package net.xiaoyu.mob_controller.compat.jade;
 
 import net.minecraft.nbt.CompoundTag;

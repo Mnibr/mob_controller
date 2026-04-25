@@ -1,6 +1,3 @@
-// ============================================================
-// 源文件: net.xiaoyu.mob_controller.registry.ModItems.java
-// ============================================================
 package net.xiaoyu.mob_controller.registry;
 
 import net.minecraft.world.item.Item;

@@ -1,6 +1,3 @@
-// ============================================================
-// 源文件: net.xiaoyu.mob_controller.capability.MobControlCapability.java
-// ============================================================
 package net.xiaoyu.mob_controller.capability;
 
 import net.minecraft.nbt.CompoundTag;

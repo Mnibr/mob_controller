@@ -1,6 +1,3 @@
-// ============================================================
-// 源文件: net.xiaoyu.mob_controller.item.MobControllerItem.java
-// ============================================================
 package net.xiaoyu.mob_controller.item;
 
 import net.minecraft.ChatFormatting;

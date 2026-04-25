@@ -1,6 +1,3 @@
-// ============================================================
-// 源文件: net.xiaoyu.mob_controller.util.MobControlledData.java
-// ============================================================
 package net.xiaoyu.mob_controller.util;
 
 import com.mojang.authlib.GameProfile;
