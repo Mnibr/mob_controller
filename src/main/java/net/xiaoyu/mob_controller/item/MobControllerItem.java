@@ -1,20 +1,25 @@
 package net.xiaoyu.mob_controller.item;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.advancements.Advancement;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.xiaoyu.mob_controller.Config;
+import net.xiaoyu.mob_controller.MobController;
 import net.xiaoyu.mob_controller.entity.EntityControlledPillager;
 import net.xiaoyu.mob_controller.entity.EntityControlledWitch;
 import net.xiaoyu.mob_controller.registry.ModEntities;
@@ -34,6 +39,8 @@ import java.util.function.Function;
  * <p>用于尝试控制目标生物，并提供“控制令”批量切换模式的服务端逻辑支持。</p>
  */
 public class MobControllerItem extends Item {
+
+
     /**
      * 特殊生物类型替换函数表（如灾厄村民变体）。
      */
@@ -46,18 +53,18 @@ public class MobControllerItem extends Item {
      * 控制令生效后给予发光效果的持续时长。
      */
     private static final int GLOWING_DURATION_TICKS = 100;
-    
+
     static {
         ENTITY_TYPE_FUNCTION_MAP.put(
-            EntityType.PILLAGER, oldEntity ->
-                newMob(oldEntity, ModEntities.CONTROLLED_PILLAGER.get(), EntityControlledPillager::new)
+                EntityType.PILLAGER, oldEntity ->
+                        newMob(oldEntity, ModEntities.CONTROLLED_PILLAGER.get(), EntityControlledPillager::new)
         );
         ENTITY_TYPE_FUNCTION_MAP.put(
-            EntityType.WITCH, oldEntity ->
-                newMob(oldEntity, ModEntities.CONTROLLED_WITCH.get(), EntityControlledWitch::new)
+                EntityType.WITCH, oldEntity ->
+                        newMob(oldEntity, ModEntities.CONTROLLED_WITCH.get(), EntityControlledWitch::new)
         );
     }
-    
+
     /**
      * 构造生物控制器物品。
      *
@@ -66,7 +73,7 @@ public class MobControllerItem extends Item {
     public MobControllerItem(Properties properties) {
         super(properties);
     }
-    
+
     /**
      * 对玩家周围所有受其控制的生物批量应用控制模式。
      *
@@ -78,23 +85,23 @@ public class MobControllerItem extends Item {
         if (player.level().isClientSide) {
             return 0;
         }
-        
+
         AABB area = player.getBoundingBox().inflate(CONTROL_COMMAND_RANGE);
         List<Mob> controlledMobs = player.level().getEntitiesOfClass(
-            Mob.class, area, mob ->
-                MobControlledData.isControlledEntity(mob) && player.getUUID().equals(MobControlledData.getControllerUUID(mob))
+                Mob.class, area, mob ->
+                        MobControlledData.isControlledEntity(mob) && player.getUUID().equals(MobControlledData.getControllerUUID(mob))
         );
-        
+
         for (Mob mob : controlledMobs) {
             MobControlledData.setControlMode(mob, mode);
             mob.setTarget(null);
             MobControlledData.clearSystemAttack(mob);
             mob.addEffect(new MobEffectInstance(MobEffects.GLOWING, GLOWING_DURATION_TICKS));
         }
-        
+
         return controlledMobs.size();
     }
-    
+
     /**
      * 使用旧实体 NBT 创建新实体实例，并尽量保持位置和朝向。
      *
@@ -105,33 +112,33 @@ public class MobControllerItem extends Item {
      * @return 新创建的生物实体
      */
     private static <T extends Entity> Mob newMob(
-        Entity oldEntity,
-        EntityType<T> entityType,
-        BiFunction<EntityType<T>, ServerLevel, Mob> newMobFunction
+            Entity oldEntity,
+            EntityType<T> entityType,
+            BiFunction<EntityType<T>, ServerLevel, Mob> newMobFunction
     ) {
         CompoundTag nbt = oldEntity.saveWithoutId(new CompoundTag());
-        
+
         double x = oldEntity.getX();
         double y = oldEntity.getY();
         double z = oldEntity.getZ();
         float yRot = oldEntity.getYRot();
         float xRot = oldEntity.getXRot();
-        
+
         ServerLevel serverLevel = (ServerLevel) oldEntity.level();
-        
+
         oldEntity.remove(Entity.RemovalReason.DISCARDED);
-        
+
         Mob newMob = newMobFunction.apply(entityType, serverLevel);
-        
+
         newMob.load(nbt);
-        
+
         newMob.setPos(x, y, z);
         newMob.setYRot(yRot);
         newMob.setXRot(xRot);
-        
+
         return newMob;
     }
-    
+
     /**
      * 玩家对生物右键时尝试执行控制。
      *
@@ -145,38 +152,72 @@ public class MobControllerItem extends Item {
     public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity target, InteractionHand hand) {
         if (target instanceof Mob mob) {
             Level level = player.level();
-            
+
             if (!level.isClientSide) {
+                // 如果已经被控制，直接返回
                 if (MobControlledData.isControlledEntity(mob)) {
                     return InteractionResult.PASS;
                 }
-                
-                if (!Config.ALWAYS_SUCCESS.get() && mob.getHealth() > 10.0F) {
-                    spawnParticles(mob, false);
-                    return InteractionResult.FAIL;
+
+                // ---------- 限制条件检查（如果 always_success 为 true，则跳过部分数值门槛） ----------
+                boolean alwaysSuccess = Config.ALWAYS_SUCCESS.get();
+
+                // 1. 攻击力上限检查（always_success 时跳过）
+                if (!alwaysSuccess) {
+                    double attackDamage = mob.getAttributeValue(Attributes.ATTACK_DAMAGE);
+                    if (attackDamage >= Config.ATTACK_LIMIT.get()) {
+                        spawnParticles(mob, false);
+                        return InteractionResult.FAIL;
+                    }
                 }
-                
-                if (MobControlledData.hasPlayerControlledSameHighHealthMob(player.getUUID(), mob)) {
-                    /*MobControlUtil.showMessageToPlayer(
-                        player, null, "mob_controller.error.same_high_health_mob",
-                        new Object[]{ MobControlledData.HIGH_HEALTH_THRESHOLD }, ChatFormatting.RED
-                    );*/
-                    
-                    spawnParticles(mob, false);
-                    return InteractionResult.FAIL;
+
+                // 2. 生命值上限检查（always_success 时跳过）
+                if (!alwaysSuccess) {
+                    float maxHealth = mob.getMaxHealth();
+                    if (maxHealth >= Config.HEALTH_LIMIT.get()) {
+                        spawnParticles(mob, false);
+                        return InteractionResult.FAIL;
+                    }
                 }
-                
+
+                // 3. 当前生命值条件（固定血量阈值 或 百分比阈值）（always_success 时跳过）
+                if (!alwaysSuccess) {
+                    float currentHealth = mob.getHealth();
+                    float maxHealth = mob.getMaxHealth();
+                    boolean healthConditionMet = false;
+                    // 固定血量条件
+                    if (currentHealth <= Config.REQUIRED_HEALTH.get()) {
+                        healthConditionMet = true;
+                    }
+                    // 百分比条件（当前生命值百分比 <= 配置的百分比阈值，支持小数 0.0~100.0）
+                    double healthPercent = (currentHealth / maxHealth) * 100.0;
+                    if (healthPercent <= Config.HEALTH_PERCENT_THRESHOLD.get()) {
+                        healthConditionMet = true;
+                    }
+                    if (!healthConditionMet) {
+                        spawnParticles(mob, false);
+                        return InteractionResult.FAIL;
+                    }
+                }
+
+                // 原有黑名单和不可控生物检查（不受 always_success 影响，始终执行）
                 if (Config.BLACKLISTED_MOBS.get().contains(EntityType.getKey(mob.getType()).toString()) || hasOwnerOrTameTag(mob)) {
                     spawnParticles(mob, false);
                     return InteractionResult.FAIL;
                 }
-                
+
+                // 高生命值生物同类型限制检查（不受 always_success 影响，始终执行）
+                if (MobControlledData.hasPlayerControlledSameHighHealthMob(player.getUUID(), mob)) {
+                    spawnParticles(mob, false);
+                    return InteractionResult.FAIL;
+                }
+
+                // 计算控制成功率（如果 always_success 为 true，则直接 100% 成功）
                 float controlChance = 1.0f;
-                
-                if (!Config.ALWAYS_SUCCESS.get()) {
+                if (!alwaysSuccess) {
                     controlChance = calculateControlChance(mob);
                 }
-                
+
                 if (level.random.nextFloat() <= controlChance) {
                     mob.setTarget(null);
                     // 控制成功
@@ -193,7 +234,7 @@ public class MobControllerItem extends Item {
         }
         return InteractionResult.PASS;
     }
-    
+
     /**
      * 检查生物是否属于已驯服或已有主人的实体。
      *
@@ -206,7 +247,7 @@ public class MobControllerItem extends Item {
                 return true;
             }
         }
-        
+
         CompoundTag nbt = mob.saveWithoutId(new CompoundTag());
         if (nbt.contains("Owner") || nbt.contains("OwnerUUID")) {
             return true;
@@ -216,7 +257,7 @@ public class MobControllerItem extends Item {
         }
         return mob instanceof TamableAnimal;
     }
-    
+
     /**
      * 根据生物最大生命值计算控制成功率。
      *
@@ -229,9 +270,9 @@ public class MobControllerItem extends Item {
                 return 0.0f;
             }
         }
-        
+
         float maxHealth = mob.getMaxHealth();
-        
+
         if (maxHealth < 10) {
             return 1.0f;
         } else if (maxHealth <= 50) {
@@ -244,7 +285,7 @@ public class MobControllerItem extends Item {
             return Math.max(chance, 0.2f);
         }
     }
-    
+
     /**
      * 将目标生物标记为被指定玩家控制，并清理附近受控生物仇恨。
      *
@@ -282,7 +323,7 @@ public class MobControllerItem extends Item {
             }
         }
     }
-    
+
     /**
      * 在服务端生成控制成功/失败粒子效果。
      *
@@ -291,33 +332,33 @@ public class MobControllerItem extends Item {
      */
     private void spawnParticles(Mob mob, boolean success) {
         Level level = mob.level();
-        
+
         if (level.isClientSide) {
             return;
         }
-        
+
         // 控制成功
         if (success) {
             ((ServerLevel) level).sendParticles(
-                ParticleTypes.HEART,
-                mob.getX(),
-                mob.getY() + mob.getBbHeight(),
-                mob.getZ(),
-                7,
-                0.5, 0.5, 0.5,
-                0.1
+                    ParticleTypes.HEART,
+                    mob.getX(),
+                    mob.getY() + mob.getBbHeight(),
+                    mob.getZ(),
+                    7,
+                    0.5, 0.5, 0.5,
+                    0.1
             );
         }
         // 控制失败
         else {
             ((ServerLevel) level).sendParticles(
-                ParticleTypes.ANGRY_VILLAGER,
-                mob.getX(),
-                mob.getY() + mob.getBbHeight(),
-                mob.getZ(),
-                7,
-                0.5, 0.5, 0.5,
-                0.1
+                    ParticleTypes.ANGRY_VILLAGER,
+                    mob.getX(),
+                    mob.getY() + mob.getBbHeight(),
+                    mob.getZ(),
+                    7,
+                    0.5, 0.5, 0.5,
+                    0.1
             );
         }
     }

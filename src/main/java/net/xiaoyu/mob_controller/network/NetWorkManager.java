@@ -33,17 +33,14 @@ public class NetWorkManager {
      */
     public static void register() {
         int id = 0;
-        INSTANCE.registerMessage(
-            id++, ToggleControlModePacket.class, ToggleControlModePacket::toBytes,
-            ToggleControlModePacket::new, ToggleControlModePacket::handle
-        );
-        INSTANCE.registerMessage(
-            id++, MobControlCapabilitySyncPacket.class, MobControlCapabilitySyncPacket::toBytes,
-            MobControlCapabilitySyncPacket::new, MobControlCapabilitySyncPacket::handle
-        );
-        INSTANCE.registerMessage(
-            id++, ApplyControlCommandPacket.class, ApplyControlCommandPacket::toBytes,
-            ApplyControlCommandPacket::new, ApplyControlCommandPacket::handle
-        );
+        INSTANCE.registerMessage(id++, ToggleControlModePacket.class, ToggleControlModePacket::toBytes,
+                ToggleControlModePacket::new, ToggleControlModePacket::handle);
+        INSTANCE.registerMessage(id++, MobControlCapabilitySyncPacket.class, MobControlCapabilitySyncPacket::toBytes,
+                MobControlCapabilitySyncPacket::new, MobControlCapabilitySyncPacket::handle);
+        INSTANCE.registerMessage(id++, ApplyControlCommandPacket.class, ApplyControlCommandPacket::toBytes,
+                ApplyControlCommandPacket::new, ApplyControlCommandPacket::handle);
+        // 新增
+        INSTANCE.registerMessage(id++, SwitchAggressiveModePacket.class, SwitchAggressiveModePacket::toBytes,
+                SwitchAggressiveModePacket::new, SwitchAggressiveModePacket::handle);
     }
 }

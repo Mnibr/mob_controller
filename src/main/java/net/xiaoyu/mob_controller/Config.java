@@ -31,23 +31,23 @@ public class Config {
      * 以避免与原版驯服机制冲突。</p>
      */
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> BLACKLISTED_MOBS = BUILDER
-        .comment("List of mob that cannot be controlled")
-        .defineList(
-            "blacklisted_mobs", Arrays.asList(
-                "minecraft:parrot",
-                "minecraft:wolf",
-                "minecraft:cat",
-                "minecraft:ocelot",
-                "minecraft:horse",
-                "minecraft:donkey",
-                "minecraft:mule",
-                "minecraft:llama",
-                "minecraft:trader_llama",
-                "minecraft:skeleton_horse",
-                "minecraft:zombie_horse",
-                "minecraft:camel"
-            ), obj -> obj instanceof String
-        );
+            .comment("List of mob that cannot be controlled")
+            .defineList(
+                    "blacklisted_mobs", Arrays.asList(
+                            "minecraft:parrot",
+                            "minecraft:wolf",
+                            "minecraft:cat",
+                            "minecraft:ocelot",
+                            "minecraft:horse",
+                            "minecraft:donkey",
+                            "minecraft:mule",
+                            "minecraft:llama",
+                            "minecraft:trader_llama",
+                            "minecraft:skeleton_horse",
+                            "minecraft:zombie_horse",
+                            "minecraft:camel"
+                    ), obj -> obj instanceof String
+            );
 
     /**
      * 在 STAY（停留）模式下需要进行坐标焊死（coordinate-weld）处理的特殊 AI 飞行生物列表。
@@ -59,16 +59,16 @@ public class Config {
      * @see net.xiaoyu.mob_controller.util.MobControlUtil#applyStayFlightCoordinateWeld(net.minecraft.world.entity.Mob)
      */
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> STAY_WELDED_SPECIAL_AI_MOBS = BUILDER
-        .comment("Special AI mobs that should be coordinate-welded in STAY mode")
-        .defineList(
-            "stay_welded_special_ai_mobs", Arrays.asList(
-                "minecraft:ghast",
-                "minecraft:vex",
-                "minecraft:blaze",
-                "minecraft:phantom",
-                "minecraft:bat"
-            ), obj -> obj instanceof String
-        );
+            .comment("Special AI mobs that should be coordinate-welded in STAY mode")
+            .defineList(
+                    "stay_welded_special_ai_mobs", Arrays.asList(
+                            "minecraft:ghast",
+                            "minecraft:vex",
+                            "minecraft:blaze",
+                            "minecraft:phantom",
+                            "minecraft:bat"
+                    ), obj -> obj instanceof String
+            );
 
     /**
      * 是否始终使控制尝试成功（即忽略成功率随机计算）。
@@ -77,8 +77,8 @@ public class Config {
      * 建议调试时或服务器管理员测试时使用。默认值为 {@code false}。</p>
      */
     public static final ForgeConfigSpec.BooleanValue ALWAYS_SUCCESS = BUILDER
-        .comment("Whether to always succeed in controlling mobs")
-        .define("always_success", false);
+            .comment("Whether to always succeed in controlling mobs")
+            .define("always_success", false);
 
     /**
      * 被控制生物是否会听从主人的指令去攻击其他玩家。
@@ -87,8 +87,8 @@ public class Config {
      * 不影响主人/受控生物遭到其他玩家攻击时的防御反击逻辑。默认值为 {@code true}。</p>
      */
     public static final ForgeConfigSpec.BooleanValue CONTROLLED_MOBS_ATTACK_PLAYERS_ON_COMMAND = BUILDER
-        .comment("Whether controlled mobs obey their owner's attack command against other players")
-        .define("controlled_mobs_attack_players_on_command", true);
+            .comment("Whether controlled mobs obey their owner's attack command against other players")
+            .define("controlled_mobs_attack_players_on_command", true);
 
     /**
      * 受控生物在脱战后开始自动回血前需要等待的 tick 数。
@@ -96,22 +96,22 @@ public class Config {
      * <p>默认值为 {@code 100}（5 秒）。设为 {@code 0} 表示一旦没有有效战斗目标就可立即开始回血。</p>
      */
     public static final ForgeConfigSpec.IntValue CONTROLLED_MOB_HEAL_OUT_OF_COMBAT_DELAY_TICKS = BUILDER
-        .comment("Ticks a controlled mob must stay out of combat before auto-healing starts (100 ticks = 5 seconds)")
-        .defineInRange("controlled_mob_heal_out_of_combat_delay_ticks", 100, 0, Integer.MAX_VALUE);
+            .comment("Ticks a controlled mob must stay out of combat before auto-healing starts (100 ticks = 5 seconds)")
+            .defineInRange("controlled_mob_heal_out_of_combat_delay_ticks", 100, 0, Integer.MAX_VALUE);
 
     /**
      * 判定为“高生命值生物”的生命值阈值。
      */
     public static final ForgeConfigSpec.IntValue HIGH_HEALTH_THRESHOLD = BUILDER
-        .comment("The life value threshold for being classified as a 'high-life-value organism'")
-        .defineInRange("high_health_threshold", 150, 1, Integer.MAX_VALUE);
+            .comment("The life value threshold for being classified as a 'high-life-value organism'")
+            .defineInRange("high_health_threshold", 150, 1, Integer.MAX_VALUE);
 
     /**
      * 生物死亡后触发重生的延迟刻数（600 tick = 30 秒）。
      */
     public static final ForgeConfigSpec.IntValue RESPAWN_DELAY_TICKS = BUILDER
-        .comment("The number of ticks that elapse before rebirth is triggered after the organism dies (600 ticks = 30 seconds)")
-        .defineInRange("respawn_delay_ticks", 600, 1, Integer.MAX_VALUE);
+            .comment("The number of ticks that elapse before rebirth is triggered after the organism dies (600 ticks = 30 seconds)")
+            .defineInRange("respawn_delay_ticks", 600, 1, Integer.MAX_VALUE);
 
     /**
      * 史莱姆延迟重生体型策略。
@@ -120,10 +120,44 @@ public class Config {
      * 设为 {@code false} 时，仅最大体型（size >= 3）可进入延迟重生队列。</p>
      */
     public static final ForgeConfigSpec.BooleanValue SLIME_RESPAWN_ONLY_MIN_SIZE = BUILDER
-        .comment(
-            "If true, only smallest slimes (size == 1) can schedule respawn; if false, only largest slime sizes (size >= 3) can schedule respawn"
-        )
-        .define("slime_respawn_only_min_size", true);
+            .comment(
+                    "If true, only smallest slimes (size == 1) can schedule respawn; if false, only largest slime sizes (size >= 3) can schedule respawn"
+            )
+            .define("slime_respawn_only_min_size", true);
+
+    /**
+     * 生物的攻击力上限。当生物的基础攻击力（属性 attack_damage）达到或超过此值时，无法被控制。
+     * 默认值 2147483647 表示实际上不限制（int 最大值）。
+     */
+    public static final ForgeConfigSpec.IntValue ATTACK_LIMIT = BUILDER
+            .comment("Maximum attack damage (attribute attack_damage) allowed for a mob to be controllable. Mobs with attack damage >= this value cannot be controlled.")
+            .defineInRange("attack_limit", Integer.MAX_VALUE, 1, Integer.MAX_VALUE);
+
+    /**
+     * 生物的生命上限。当生物的最大生命值达到或超过此值时，无法被控制。
+     * 默认值 2147483647 表示实际上不限制。
+     */
+    public static final ForgeConfigSpec.IntValue HEALTH_LIMIT = BUILDER
+            .comment("Maximum health (max health) allowed for a mob to be controllable. Mobs with max health >= this value cannot be controlled.")
+            .defineInRange("health_limit", Integer.MAX_VALUE, 1, Integer.MAX_VALUE);
+
+    /**
+     * 满足驯服条件的生命百分比阈值（单位：百分比，支持小数，范围 0.0 ~ 100.0）。
+     * <p>如果当前生命值低于最大生命值的这个百分比（例如 10.0 表示 10%，0.5 表示 0.5%），则可被控制。
+     * 该条件与“驯服时需要怪物的血量”为二选一关系，满足任意一个即可开始控制尝试。</p>
+     *
+     */
+    public static final ForgeConfigSpec.DoubleValue HEALTH_PERCENT_THRESHOLD = BUILDER
+            .comment("Health percentage threshold (0.0 ~ 100.0). If (current health / max health) * 100 <= this value, the mob becomes eligible for control (alternative to required_health). Example: 10.0 = 10%, 0.5 = 0.5%")
+            .defineInRange("health_percent_threshold", 0.01, 0.0, 100.0);
+
+    /**
+     * 驯服时需要怪物的固定血量阈值。如果当前生命值低于此值，则可被控制。
+     * 与百分比条件为二选一关系。
+     */
+    public static final ForgeConfigSpec.IntValue REQUIRED_HEALTH = BUILDER
+            .comment("Absolute health threshold. If current health <= this value, the mob becomes eligible for control (alternative to health_percent_threshold).")
+            .defineInRange("required_health", 10, 1, Integer.MAX_VALUE);
 
     /**
      * 已构建完成的配置规格，在 {@link MobController} 构造器中通过

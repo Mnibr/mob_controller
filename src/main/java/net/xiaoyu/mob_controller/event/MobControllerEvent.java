@@ -44,9 +44,19 @@ import net.xiaoyu.mob_controller.entity.EntityControlledWitch;
 import net.xiaoyu.mob_controller.network.ApplyControlCommandPacket;
 import net.xiaoyu.mob_controller.network.MobControlCapabilitySyncPacket;
 import net.xiaoyu.mob_controller.network.NetWorkManager;
+import net.xiaoyu.mob_controller.network.SwitchAggressiveModePacket;
 import net.xiaoyu.mob_controller.registry.ModItems;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
+import net.minecraft.world.phys.AABB;
+import java.util.List;
+import java.util.Comparator;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.Brain;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
+import net.minecraft.world.entity.monster.Zoglin;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -296,6 +306,97 @@ public class MobControllerEvent {
     }
 
     /**
+     * 每刻处理受控生物的索敌模式：主动寻找并锁定敌对目标，但不覆盖已有的有效目标。
+     * 对猪灵、疣猪兽等基于 Brain 的生物使用记忆模块设置目标。
+     * 加入冷却机制避免频繁操作导致AI抽搐。
+     */
+    @SubscribeEvent
+    public static void onAggressiveModeTick(LivingEvent.LivingTickEvent event) {
+        if (!(event.getEntity() instanceof Mob mob)) {
+            return;
+        }
+        if (mob.level().isClientSide) {
+            return;
+        }
+        if (!MobControlledData.isControlledEntity(mob)) {
+            return;
+        }
+        // 只处理索敌模式
+        if (!MobControlledData.isAggressiveMode(mob)) {
+            return;
+        }
+
+        // 冷却：每 20 tick（1秒）扫描一次，避免过度操作
+        if (mob.tickCount % 20 != 0) {
+            return;
+        }
+
+        // 获取当前目标
+        LivingEntity currentTarget = mob.getTarget();
+
+        // 判断当前目标是否有效（存活、可攻击、且仍为敌对）
+        boolean hasValidTarget = false;
+        if (currentTarget != null && currentTarget.isAlive() && !currentTarget.isDeadOrDying()) {
+            if (MobControlUtil.canKeepCombatTarget(mob, currentTarget)) {
+                hasValidTarget = true;
+            } else {
+                // 当前目标不再敌对，清除记忆
+                mob.setTarget(null);
+                if (mob instanceof AbstractPiglin || mob instanceof Hoglin || mob instanceof Zoglin) {
+                    Brain<?> brain = mob.getBrain();
+                    brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                    brain.eraseMemory(MemoryModuleType.ANGRY_AT);
+                }
+            }
+        }
+
+        // 如果有有效目标则跳过搜索
+        if (hasValidTarget) {
+            return;
+        }
+
+        // 判断是否为基于 Brain 的生物
+        boolean isBrainMob = mob instanceof AbstractPiglin || mob instanceof Hoglin || mob instanceof Zoglin;
+
+        // 搜寻攻击范围内的敌对生物
+        double followRange = mob.getAttributeValue(Attributes.FOLLOW_RANGE);
+        AABB searchArea = mob.getBoundingBox().inflate(followRange, 4.0, followRange);
+        List<LivingEntity> potentialTargets = mob.level().getEntitiesOfClass(
+                LivingEntity.class, searchArea,
+                target -> target.isAlive() && !target.isDeadOrDying() && MobControlUtil.isHostileTarget(mob, target)
+        );
+
+        if (!potentialTargets.isEmpty()) {
+            potentialTargets.sort(Comparator.comparingDouble(mob::distanceToSqr));
+            LivingEntity bestTarget = potentialTargets.get(0);
+
+            MobControlledData.markSystemAttack(mob);
+
+            if (isBrainMob) {
+                Brain<?> brain = mob.getBrain();
+                // 检查记忆中的 ATTACK_TARGET 是否已经是这个目标
+                boolean needSet = true;
+                var existingTarget = brain.getMemory(MemoryModuleType.ATTACK_TARGET);
+                if (existingTarget.isPresent() && existingTarget.get() == bestTarget) {
+                    needSet = false;
+                }
+
+                if (needSet) {
+                    brain.eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
+                    brain.setMemoryWithExpiry(MemoryModuleType.ATTACK_TARGET, bestTarget, 200L);
+                    if (mob instanceof AbstractPiglin) {
+                        brain.setMemoryWithExpiry(MemoryModuleType.ANGRY_AT, bestTarget.getUUID(), 600L);
+                    }
+                }
+                // 同时设置传统目标以辅助
+                mob.setTarget(bestTarget);
+            } else {
+                MobControlUtil.setMobTargetWithAnger(mob, bestTarget);
+            }
+        }
+    }
+
+    /**
      * 控制者攻击其他生物时，调度受控生物协同攻击。
      */
     @SubscribeEvent
@@ -397,9 +498,6 @@ public class MobControllerEvent {
         }
     }
 
-    /**
-     * 客户端鼠标按键释放时，下发控制令批量模式切换请求。
-     */
     @SubscribeEvent
     @OnlyIn(Dist.CLIENT)
     public static void onPlayerRightClickControlledMob(InputEvent.MouseButton.Post event) {
@@ -409,17 +507,28 @@ public class MobControllerEvent {
             return;
         }
 
-        if (mc.player.getMainHandItem().is(ModItems.CONTROL_COMMAND_ITEM.get())) {
+        ItemStack mainHand = mc.player.getMainHandItem();
+
+        // 控制令逻辑
+        if (mainHand.is(ModItems.CONTROL_COMMAND_ITEM.get())) {
             MobControlledData.ControlMode mode = switch (event.getButton()) {
                 case InputConstants.MOUSE_BUTTON_LEFT -> MobControlledData.ControlMode.FOLLOW;
                 case InputConstants.MOUSE_BUTTON_RIGHT -> MobControlledData.ControlMode.STAY;
                 case InputConstants.MOUSE_BUTTON_MIDDLE -> MobControlledData.ControlMode.WANDER;
                 default -> null;
             };
-
             if (mode != null) {
                 NetWorkManager.INSTANCE.sendToServer(new ApplyControlCommandPacket(mode));
             }
+        }
+        // 护主切换器逻辑（新增）
+        else if (mainHand.is(ModItems.AGGRESSIVE_SWITCH_ITEM.get())) {
+            boolean aggressive = switch (event.getButton()) {
+                case InputConstants.MOUSE_BUTTON_LEFT -> true;   // 左键 -> 索敌模式
+                case InputConstants.MOUSE_BUTTON_RIGHT -> false; // 右键 -> 护主模式
+                default -> false;
+            };
+            NetWorkManager.INSTANCE.sendToServer(new SwitchAggressiveModePacket(aggressive));
         }
     }
 

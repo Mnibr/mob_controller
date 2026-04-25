@@ -16,5 +16,19 @@
   "mob_controller.message.respawn_scheduled": "%s 死了，将在 %s 秒后复活",
   "mob_controller.message.respawned": "%s 复活了",
   "mob_controller.title.control_mode": "%1$s %2$s",
-  "mob_controller.tooltip.armor": "手持时鼠标右键实体以编辑TA的盔甲和物品栏。"
+  "mob_controller.tooltip.armor": "手持时鼠标右键实体以编辑TA的盔甲和物品栏。",
+  "item.mob_controller.aggressive_switch": "护主切换器",
+  "mob_controller.mode.aggressive": "索敌模式",
+  "mob_controller.mode.protective": "护主模式",
+  "mob_controller.tooltip.aggressive_switch": "左键索敌模式，右键护主模式",
+  "mob_controller.tooltip.aggressive_switch.desc": "护主模式：像狼一样",
+  "mob_controller.tooltip.aggressive_switch.desc2": "索敌模式：在护主模式的基础上会主动攻击其他生物",
+  "mob_controller.message.no_controlled_mobs_nearby": "附近没有受控生物",
+  "mob_controller.tooltip.heartcontractitem":"解除生物的驯服状态（只有主人可以解除其的驯服状态）",
+  "advancements.mob_controller.eternal_partner.title": "永恒的...伙伴？",
+  "advancements.mob_controller.eternal_partner.description": "使用生物控制器驯服一只生物",
+  "advancements.mob_controller.you_are_free.title": "你自由了...",
+  "advancements.mob_controller.you_are_free.description": "使用心变契约释放一只受控生物",
+  "advancements.mob_controller.strange_gamepad.title": "一款奇怪的游戏手柄",
+  "advancements.mob_controller.strange_gamepad.description": "合成生物控制器"
 }

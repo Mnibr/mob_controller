@@ -547,7 +547,42 @@ public class MobControlUtil {
             serverPlayer.sendSystemMessage(message, true);
         }
     }
-    
+
+    /**
+     * 判断目标是否为受控生物应主动攻击的敌对目标（基于铁傀儡逻辑）。
+     * <p>条件：</p>
+     * <ul>
+     *   <li>目标必须是 {@link net.minecraft.world.entity.monster.Enemy} 类型；</li>
+     *   <li>排除苦力怕（Creeper）；</li>
+     *   <li>排除其他受控生物（无论控制者是否相同）；</li>
+     *   <li>排除当前受控生物本身；</li>
+     *   <li>排除控制者本人。</li>
+     * </ul>
+     *
+     * @param controlledMob 受控生物
+     * @param target        候选目标
+     * @return {@code true} 表示应主动攻击
+     */
+    public static boolean isHostileTarget(LivingEntity controlledMob, LivingEntity target) {
+        if (target == null || target == controlledMob) {
+            return false;
+        }
+        // 排除苦力怕（铁傀儡也不攻击苦力怕）
+        if (target instanceof Creeper) {
+            return false;
+        }
+        // 排除其他受控生物
+        if (MobControlledData.isControlledEntity(target)) {
+            return false;
+        }
+        // 排除控制者本人
+        if (isController(controlledMob, target)) {
+            return false;
+        }
+        // 必须是敌对生物 Enemy
+        return target instanceof Enemy;
+    }
+
     /**
      * 向玩家显示“控制模式切换”标题提示。
      *

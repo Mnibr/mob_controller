@@ -16,5 +16,19 @@
   "mob_controller.message.respawn_scheduled": "%s died and will respawn in %s seconds",
   "mob_controller.message.respawned": "%s has respawned",
   "mob_controller.title.control_mode": "%1$s %2$s",
-  "mob_controller.tooltip.armor": "Hold and right-click on an entity to edit its armor and inventory."
+  "mob_controller.tooltip.armor": "Hold and right-click on an entity to edit its armor and inventory.",
+  "item.mob_controller.aggressive_switch": "Master-protection Switch",
+  "mob_controller.mode.aggressive": "Aggressive Mode",
+  "mob_controller.mode.protective": "Protective Mode",
+  "mob_controller.tooltip.aggressive_switch": "Left-click for Aggressive Mode, right-click for Protective Mode",
+  "mob_controller.tooltip.aggressive_switch.desc": "Protective Mode: Like a wolf",
+  "mob_controller.tooltip.aggressive_switch.desc2": "Aggressive Mode: On top of Protective Mode, actively attacks other creatures",
+  "mob_controller.message.no_controlled_mobs_nearby": "No controlled mobs nearby",
+  "mob_controller.tooltip.heartcontractitem":"Untame a mob (only the owner can untame it).",
+  "advancements.mob_controller.eternal_partner.title": "Eternal... Partner?",
+  "advancements.mob_controller.eternal_partner.description": "Use the Mob Controller to tame a creature",
+  "advancements.mob_controller.you_are_free.title": "You are free...",
+  "advancements.mob_controller.you_are_free.description": "Release a controlled creature with the Heart Contract",
+  "advancements.mob_controller.strange_gamepad.title": "A Strange Gamepad",
+  "advancements.mob_controller.strange_gamepad.description": "Craft a Mob Controller"
 }

@@ -15,8 +15,8 @@ import javax.annotation.Nullable;
  *   <li><b>controlMode</b>：当前控制模式（跟随 / 停留 / 游荡）；</li>
  *   <li><b>lastHealTime</b>：上一次被治愈的游戏时间刻，用于冷却计算；</li>
  *   <li><b>lastCombatTime</b>：最近一次进入战斗/发生交战的游戏时间刻，用于脱战判定；</li>
- *   <li><b>isSystemAttack</b>：标记当前攻击是否由系统（非玩家手动指令）发起，
- *       用于区分仇恨源头。</li>
+ *   <li><b>isSystemAttack</b>：标记当前攻击是否由系统（非玩家手动指令）发起，用于区分仇恨源头；</li>
+ *   <li><b>aggressiveMode</b>：索敌模式标记，{@code true} 表示生物会主动攻击敌对生物（护主模式的增强版本）。</li>
  * </ul>
  *
  * <p>实例由 {@link MobControlCapabilityProvider} 延迟创建，
@@ -33,9 +33,10 @@ public class MobControlCapability {
     private long lastHealTime = 0;
     private long lastCombatTime = 0;
     private boolean isSystemAttack = false;
+    private boolean aggressiveMode = false;  // 新增：索敌模式，默认护主模式（false）
 
     /**
-     * 无参构造器，所有字段使用默认值（未控制、跟随模式）。
+     * 无参构造器，所有字段使用默认值（未控制、跟随模式、护主模式）。
      */
     public MobControlCapability() {
     }
@@ -150,6 +151,24 @@ public class MobControlCapability {
     }
 
     /**
+     * 获取索敌模式状态。
+     *
+     * @return {@code true} 表示当前为索敌模式，{@code false} 为护主模式
+     */
+    public boolean isAggressiveMode() {
+        return aggressiveMode;
+    }
+
+    /**
+     * 设置索敌模式状态。
+     *
+     * @param aggressiveMode {@code true} 设为索敌模式，{@code false} 设为护主模式
+     */
+    public void setAggressiveMode(boolean aggressiveMode) {
+        this.aggressiveMode = aggressiveMode;
+    }
+
+    /**
      * 将能力数据序列化为 {@link CompoundTag} 以写入磁盘或通过网络同步。
      *
      * <p>写入的键名如下：</p>
@@ -159,6 +178,7 @@ public class MobControlCapability {
      *   <li>{@code "LastHealTime"}</li>
      *   <li>{@code "LastCombatTime"}</li>
      *   <li>{@code "IsSystemAttack"}</li>
+     *   <li>{@code "AggressiveMode"}（新增）</li>
      * </ul>
      *
      * @return 包含本能力数据的 NBT 标签
@@ -172,6 +192,7 @@ public class MobControlCapability {
         nbt.putLong("LastHealTime", lastHealTime);
         nbt.putLong("LastCombatTime", lastCombatTime);
         nbt.putBoolean("IsSystemAttack", isSystemAttack);
+        nbt.putBoolean("AggressiveMode", aggressiveMode);
         return nbt;
     }
 
@@ -199,5 +220,6 @@ public class MobControlCapability {
         lastHealTime = nbt.getLong("LastHealTime");
         lastCombatTime = nbt.getLong("LastCombatTime");
         isSystemAttack = nbt.getBoolean("IsSystemAttack");
+        aggressiveMode = nbt.getBoolean("AggressiveMode");
     }
 }

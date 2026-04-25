@@ -21,7 +21,8 @@ import net.xiaoyu.mob_controller.registry.ModItems;
  *   <li>生物控制器 —— 用于控制生物；</li>
  *   <li>控制令 —— 批量发布控制指令；</li>
  *   <li>心变契约 —— 解除对生物的控制；</li>
- *   <li>盔甲编辑蓝图 —— 打开被控生物的装备界面。</li>
+ *   <li>盔甲编辑蓝图 —— 打开被控生物的装备界面；</li>
+ *   <li>护主切换器 —— 切换受控生物的战斗风格（护主/索敌）。</li>
  * </ol>
  */
 public class CreativeTab {
@@ -31,7 +32,7 @@ public class CreativeTab {
      * @see MobController#MOD_ID
      */
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
-        DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MobController.MOD_ID);
+            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MobController.MOD_ID);
 
     /**
      * 本模组在创造模式物品栏中的标签页注册对象。
@@ -39,21 +40,23 @@ public class CreativeTab {
      * <p>懒加载，在 Forge 注册阶段通过 {@link #CREATIVE_MODE_TABS} 完成实例化。</p>
      */
     public static final RegistryObject<CreativeModeTab> MOB_CONTROLLER_TAB = CREATIVE_MODE_TABS.register(
-        "mob_controller_tab",
-        () -> CreativeModeTab.builder()
-            .title(Component.translatable("itemGroup.mob_controller"))
-            .icon(() -> new ItemStack(ModItems.MOB_CONTROLLER_ITEM.get()))
-            .displayItems((params, output) -> {
-                // 生物控制器
-                output.accept(ModItems.MOB_CONTROLLER_ITEM.get());
-                // 控制令
-                output.accept(ModItems.CONTROL_COMMAND_ITEM.get());
-                // 心变契约
-                output.accept(ModItems.HEART_CONTRACT_ITEM.get());
-                // 盔甲编辑蓝图
-                output.accept(ModItems.ARMOR_EDITING_BLUEPRINT.get());
-            })
-            .build()
+            "mob_controller_tab",
+            () -> CreativeModeTab.builder()
+                    .title(Component.translatable("itemGroup.mob_controller"))
+                    .icon(() -> new ItemStack(ModItems.MOB_CONTROLLER_ITEM.get()))
+                    .displayItems((params, output) -> {
+                        // 生物控制器
+                        output.accept(ModItems.MOB_CONTROLLER_ITEM.get());
+                        // 控制令
+                        output.accept(ModItems.CONTROL_COMMAND_ITEM.get());
+                        // 心变契约
+                        output.accept(ModItems.HEART_CONTRACT_ITEM.get());
+                        // 盔甲编辑蓝图
+                        output.accept(ModItems.ARMOR_EDITING_BLUEPRINT.get());
+                        // 护主切换器
+                        output.accept(ModItems.AGGRESSIVE_SWITCH_ITEM.get());
+                    })
+                    .build()
     );
 
     /**
