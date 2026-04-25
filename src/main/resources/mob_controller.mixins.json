@@ -49,7 +49,10 @@
     "MixinShulkerStayNoTeleport",
     "MixinWanderingTrader",
     "MixinCreeperRespawn",
-    "MixinWitherBossControlled"
+    "MixinWitherBossControlled",
+    "PetConnectEventHandlerMixin",
+    "MixinMonsterDespawn",
+    "MixinMobDespawn"
   ],
   "client": [
   ],
