@@ -23,19 +23,24 @@ public abstract class MixinCreeperRespawn {
     @Inject(method = "explodeCreeper", at = @At("HEAD"))
     private void onExplodeCreeper(CallbackInfo ci) {
         Creeper creeper = (Creeper) (Object) this;
+        if (!Config.ENABLE_RESPAWN.get()) {
+            return;
+        }
         if (MobControlledData.isControlledEntity(creeper) && creeper.level() instanceof ServerLevel serverLevel) {
-            // 主动获取控制者并发送复活提醒消息
-            Player controller = MobControlledData.getController(creeper, serverLevel);
-            if (controller instanceof ServerPlayer serverPlayer) {
-                int seconds = Config.RESPAWN_DELAY_TICKS.get() / 20;
-                serverPlayer.sendSystemMessage(Component.translatable(
-                        "mob_controller.message.respawn_scheduled",
-                        creeper.getDisplayName(),
-                        seconds
-                ));
+            // 构造死因（简单处理）
+            String deathCause = Component.translatable("mob_controller.death.creeper_explode").getString();
+            if (MobControlledData.scheduleRespawn(creeper, serverLevel, deathCause)) {
+                Player controller = MobControlledData.getController(creeper, serverLevel);
+                if (controller instanceof ServerPlayer serverPlayer) {
+                    int seconds = Config.RESPAWN_DELAY_TICKS.get() / 20;
+                    serverPlayer.sendSystemMessage(Component.translatable(
+                            "mob_controller.message.respawn_scheduled_cause",
+                            creeper.getDisplayName(),
+                            deathCause,
+                            seconds
+                    ));
+                }
             }
-            // 将苦力怕加入重生队列（内部会保存数据，但可能不发消息）
-            MobControlledData.scheduleRespawn(creeper, serverLevel);
         }
     }
 }
