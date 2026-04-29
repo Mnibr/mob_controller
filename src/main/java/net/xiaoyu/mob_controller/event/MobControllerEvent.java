@@ -151,6 +151,14 @@ public class MobControllerEvent {
                 && MobControlledData.isControlledEntity(mob)) {
 
             if (!Config.ENABLE_RESPAWN.get()) {
+                if (mob.level() instanceof ServerLevel deathLevel) {
+                    Player controller = MobControlledData.getController(mob, deathLevel);
+                    if (controller instanceof ServerPlayer serverPlayer) {
+                        String deathCause = extractDeathCause(event.getSource(), mob);
+                        serverPlayer.sendSystemMessage(Component.translatable("mob_controller.message.death_cause",
+                                mob.getDisplayName(), deathCause));
+                    }
+                }
                 return;
             }
 
