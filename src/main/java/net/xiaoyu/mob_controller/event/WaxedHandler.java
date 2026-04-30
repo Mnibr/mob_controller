@@ -2,6 +2,7 @@ package net.xiaoyu.mob_controller.event;
 
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionResult;
@@ -18,6 +19,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 import net.xiaoyu.mob_controller.MobController;
+import net.xiaoyu.mob_controller.advancement.MobControllerTriggers;
 import net.xiaoyu.mob_controller.capability.WaxedCapabilityProvider;
 
 @Mod.EventBusSubscriber(modid = MobController.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -59,6 +61,10 @@ public class WaxedHandler {
             target.getCapability(WaxedCapabilityProvider.WAXED_CAPABILITY).ifPresent(cap -> {
                 if (!cap.isWaxed()) {
                     cap.setWaxed(true);
+                    if (player instanceof ServerPlayer serverPlayer) {
+                        MobControllerTriggers.WAX_WATER_SENSITIVE.trigger(serverPlayer, target);
+                        MobController.grantRootAdvancementIfNeeded(serverPlayer);  // 新增
+                    }
                     if (!player.isCreative()) {
                         stack.shrink(1);
                     }

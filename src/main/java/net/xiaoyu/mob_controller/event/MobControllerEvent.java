@@ -41,6 +41,7 @@ import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
@@ -48,17 +49,18 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
 import net.xiaoyu.mob_controller.Config;
+import net.xiaoyu.mob_controller.MobController;
+import net.xiaoyu.mob_controller.advancement.MobControllerTriggers;
 import net.xiaoyu.mob_controller.capability.MobControlCapabilityProvider;
 import net.xiaoyu.mob_controller.item.AggressiveSwitchItem;
+import net.xiaoyu.mob_controller.item.ModeSelectControlCommandItem;
 import net.xiaoyu.mob_controller.item.RideCommandItem;
-import net.xiaoyu.mob_controller.network.ApplyControlCommandPacket;
-import net.xiaoyu.mob_controller.network.MobControlCapabilitySyncPacket;
-import net.xiaoyu.mob_controller.network.NetWorkManager;
-import net.xiaoyu.mob_controller.network.SwitchAggressiveModePacket;
+import net.xiaoyu.mob_controller.network.*;
 import net.xiaoyu.mob_controller.registry.ModItems;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
 import net.minecraft.world.phys.AABB;
+
 import java.util.List;
 import java.util.Comparator;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -250,6 +252,18 @@ public class MobControllerEvent {
                 event.setCanceled(true);
             }
         }
+        // 护主切换器单体切换（左键触发，但已在 onAttackEntityWithAggressiveSwitch 中处理，这里不再重复）
+        // 新增：控制令·切换模式版左键切换模式
+        else if (mainHand.getItem() instanceof ModeSelectControlCommandItem) {
+            if (!player.level().isClientSide) {
+                ModeSelectControlCommandItem.cycleSelectedMode(mainHand);
+                MobControlledData.ControlMode newMode = ModeSelectControlCommandItem.getSelectedMode(mainHand);
+                String modeKey = "mob_controller.mode." + newMode.toString().toLowerCase();
+                player.displayClientMessage(Component.translatable("mob_controller.message.mode_switched",
+                        Component.translatable(modeKey)).withStyle(ChatFormatting.GOLD), true);
+            }
+            event.setCanceled(true);
+        }
     }
 
     @SubscribeEvent
@@ -328,6 +342,10 @@ public class MobControllerEvent {
                         } else {
                             MobControlUtil.setMobTargetWithAnger(mob, attacker);
                         }
+                    }
+                } else {
+                    if (event.getSource().getMsgId().equals("outOfWorld")) {
+                        MobControlledData.markCombat(mob);
                     }
                 }
             }
@@ -578,7 +596,7 @@ public class MobControllerEvent {
                 if (!mob.level().isClientSide) {
                     mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY).ifPresent(cap ->
                             NetWorkManager.INSTANCE.send(
-                                    PacketDistributor.TRACKING_ENTITY_AND_SELF.with(event::getEntity),
+                                    PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> mob),
                                     new MobControlCapabilitySyncPacket(mob.getId(), cap.serializeNBT())
                             ));
                 }
@@ -586,7 +604,7 @@ public class MobControllerEvent {
         }
     }
 
-    // 修改原有的 onPlayerRightClickControlledMob 方法
+    // 修改原有的 onPlayerRightClickControlledMob 方法，新增对 ModeSelectControlCommandItem 的支持
     @SubscribeEvent
     @OnlyIn(Dist.CLIENT)
     public static void onPlayerRightClickControlledMob(InputEvent.MouseButton.Post event) {
@@ -639,6 +657,25 @@ public class MobControllerEvent {
                     // 未瞄准有效受控生物，发送无效单体包（服务端会反馈消息）
                     NetWorkManager.INSTANCE.sendToServer(new SwitchAggressiveModePacket(aggressive, -2));
                 }
+            }
+        }
+        // 新增：控制令·切换模式版（驭兽哨）逻辑
+        else if (mainHand.is(ModItems.MODE_SELECT_CONTROL_COMMAND_ITEM.get())) {
+            int button = event.getButton();
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
+                ModeSelectControlCommandItem.cycleSelectedMode(mainHand);
+                MobControlledData.ControlMode newMode = ModeSelectControlCommandItem.getSelectedMode(mainHand);
+                // 发送同步包到服务端
+                NetWorkManager.INSTANCE.sendToServer(new SyncSelectedModePacket(newMode));
+                String modeKey = "mob_controller.mode." + newMode.toString().toLowerCase();
+                mc.player.displayClientMessage(Component.translatable("mob_controller.message.mode_switched",
+                        Component.translatable(modeKey)).withStyle(ChatFormatting.GOLD), true);
+                mc.player.swing(InteractionHand.MAIN_HAND);
+            } else if (button == InputConstants.MOUSE_BUTTON_RIGHT) {
+                // 右键：发送批量控制包（服务端执行）
+                MobControlledData.ControlMode mode = ModeSelectControlCommandItem.getSelectedMode(mainHand);
+                NetWorkManager.INSTANCE.sendToServer(new ApplyControlCommandPacket(mode));
+                mc.player.swing(InteractionHand.MAIN_HAND);
             }
         }
     }
@@ -719,6 +756,14 @@ public class MobControllerEvent {
         return false;
     }
 
+    @SubscribeEvent
+    public static void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            MobControllerTriggers.CRAFT_CONTROLLER.trigger(player, event.getCrafting());
+            MobController.grantRootAdvancementIfNeeded(player);
+        }
+    }
+
     private static boolean isValidCombatTarget(Mob mob, @Nullable LivingEntity target) {
         return target != null
                 && target.isAlive()
@@ -748,6 +793,13 @@ public class MobControllerEvent {
                 }
             }
         }
+        if (event.getEntity().level().isClientSide()) return;
+        if (!(event.getEntity() instanceof Mob mob)) return;
+        if (!MobControlledData.isControlledEntity(mob)) return;
+        // 天境模组未加载则跳过
+        if (!net.minecraftforge.fml.ModList.get().isLoaded("aether")) return;
+        // 执行天境虚空传送逻辑
+        handleAetherVoidTeleport(mob);
     }
 
     @Nullable
@@ -757,5 +809,53 @@ public class MobControllerEvent {
             return mob;
         }
         return null;
+    }
+
+
+    private static void handleAetherVoidTeleport(Mob mob) {
+        ServerLevel currentLevel = (ServerLevel) mob.level();
+        // 判断是否为天境维度（使用天境模组的工具类，编译时存在）
+        if (!currentLevel.dimension().equals(com.aetherteam.aether.world.LevelUtil.destinationDimension())) {
+            return;
+        }
+
+        // 检查 Y 坐标是否低于世界最低高度
+        if (mob.getY() > currentLevel.getMinBuildHeight()) return;
+
+        // 检查生物群系是否允许掉落传送（使用天境模组的 Tag）
+        var biomeTag = net.minecraft.tags.TagKey.create(
+                net.minecraft.core.registries.Registries.BIOME,
+                new net.minecraft.resources.ResourceLocation("aether", "fall_to_overworld")
+        );
+        if (!currentLevel.getBiome(mob.blockPosition()).is(biomeTag)) return;
+
+        // 获取目标维度（主世界，使用天境模组的返回维度工具）
+        var destinationKey = com.aetherteam.aether.world.LevelUtil.returnDimension();
+        ServerLevel targetLevel = currentLevel.getServer().getLevel(destinationKey);
+        if (targetLevel == null) return;
+
+        // 获取当前实体的所有乘客
+        java.util.List<net.minecraft.world.entity.Entity> passengers = mob.getPassengers();
+
+        // 执行维度传送（使用天境模组的 AetherPortalForcer）
+        net.minecraft.world.entity.Entity newEntity = mob.changeDimension(
+                targetLevel,
+                new com.aetherteam.aether.block.portal.AetherPortalForcer(targetLevel, false)
+        );
+
+        if (newEntity instanceof Mob newMob) {
+            // 将乘客重新骑乘到新实体上
+            for (net.minecraft.world.entity.Entity passenger : passengers) {
+                passenger.stopRiding();
+                net.minecraft.world.entity.Entity newPassenger = passenger.changeDimension(targetLevel, new com.aetherteam.aether.block.portal.AetherPortalForcer(targetLevel, false));
+                if (newPassenger != null) {
+                    newPassenger.startRiding(newMob, true);
+                    // 若乘客是玩家，设置传送计时器（防止飞行检测）
+                    if (newPassenger instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+                        com.aetherteam.aether.event.hooks.DimensionHooks.teleportationTimer = 500;
+                    }
+                }
+            }
+        }
     }
 }
