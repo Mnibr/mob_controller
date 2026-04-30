@@ -22,6 +22,7 @@
 
   "mob_controller.message.connection": "%s %s",
   "mob_controller.message.respawn_scheduled_cause": "%s%s，将在 %s 秒后复活",
+  "mob_controller.message.death_cause": "%s%s",
   "mob_controller.death.creeper_explode": "自爆了",
   "mob_controller.message.respawned": "%s 复活了",
   "mob_controller.message.no_controlled_mobs_nearby": "附近没有受控生物",
@@ -64,5 +65,24 @@
   "mob_controller.tooltip.creative_mob_controller": "无视血量限制和驯服概率驯服一只生物，创造模式的测试用品",
   "mob_controller.waxed": "蜜蜡保护",
   "mob_controller.subtitle.control_command_use": "哨声",
-  "mob_controller.subtitle.aggressive_switch_batch": "号角声"
+  "mob_controller.subtitle.aggressive_switch_batch": "号角声",
+  "mob_controller.message.ride_mount_full": "已经有 [%d] 只生物骑着 %s 了，坐不下了！",
+  "item.mob_controller.mode_select_control_command": "驭兽哨 (%s)",
+  "mob_controller.tooltip.mode_select_control_command": "特制的驭兽哨，能精确地选择控制模式",
+  "mob_controller.tooltip.mode_select_control_command.desc": "§7左键循环切换当前模式§r§7，右键批量应用当前模式给附近32格内所有受控生物",
+  "mob_controller.message.mode_switched": "当前号召模式已切换为：%s",
+  "advancements.mob_controller.root.title": "万物皆驯！",
+  "advancements.mob_controller.root.description": "驯服一切！",
+  "advancements.mob_controller.tame_journey.title": "驯服之旅",
+  "advancements.mob_controller.tame_journey.description": "合成不竭金羹或五谷杂粮",
+  "advancements.mob_controller.use_control_command.title": "稍息！立正！齐步走！",
+  "advancements.mob_controller.use_control_command.description": "使用一次驭兽哨",
+  "advancements.mob_controller.tame_master.title": "驯兽大师",
+  "advancements.mob_controller.tame_master.description": "驯服20种不同的生物，并且其中包含一只强大生物",
+  "advancements.mob_controller.wax_water_sensitive.title": "防水贴膜",
+  "advancements.mob_controller.wax_water_sensitive.description": "为水过敏生物打蜡",
+  "advancements.mob_controller.release_control.title": "它的脸扭曲成了一团",
+  "advancements.mob_controller.release_control.description": "喂食黑暗料理给你驯服的生物使其解除驯服",
+  "advancements.mob_controller.first_companion.title": "最初的伙伴",
+  "advancements.mob_controller.first_companion.description": "成功驯服一只生物"
 }

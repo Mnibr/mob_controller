@@ -65,7 +65,8 @@
     "MixinPhantom",
     "MixinPhantomSweepAttackGoal",
     "PhantomAccessor",
-    "ValkyrieQueenMixin"
+    "ValkyrieQueenMixin",
+    "MerchantOfferAccessor"
   ],
   "client": [
   ],
