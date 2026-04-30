@@ -1,3 +1,7 @@
+// ============================================================
+// 源文件: C:/Users/Mnibr/Desktop/生物控制器源码/mob_controller-1.20.1-Forge/src\main\java\net\xiaoyu\mob_controller\mixin\MixinCreeperRespawn.java
+// ============================================================
+
 package net.xiaoyu.mob_controller.mixin;
 
 import net.minecraft.network.chat.Component;
@@ -24,6 +28,15 @@ public abstract class MixinCreeperRespawn {
     private void onExplodeCreeper(CallbackInfo ci) {
         Creeper creeper = (Creeper) (Object) this;
         if (!Config.ENABLE_RESPAWN.get()) {
+            // 重生禁用时，仍然向控制者显示死因（不安排重生）
+            if (MobControlledData.isControlledEntity(creeper) && creeper.level() instanceof ServerLevel serverLevel) {
+                Player controller = MobControlledData.getController(creeper, serverLevel);
+                if (controller instanceof ServerPlayer serverPlayer) {
+                    String deathCause = Component.translatable("mob_controller.death.creeper_explode").getString();
+                    serverPlayer.sendSystemMessage(Component.translatable("mob_controller.message.death_cause",
+                            creeper.getDisplayName(), deathCause));
+                }
+            }
             return;
         }
         if (MobControlledData.isControlledEntity(creeper) && creeper.level() instanceof ServerLevel serverLevel) {

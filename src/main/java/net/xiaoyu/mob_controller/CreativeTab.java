@@ -56,6 +56,8 @@ public class CreativeTab {
                         output.accept(ModItems.GRAIN_ITEM.get());
                         // 控制令
                         output.accept(ModItems.CONTROL_COMMAND_ITEM.get());
+                        // 控制令切换模式版
+                        output.accept(ModItems.MODE_SELECT_CONTROL_COMMAND_ITEM.get());
                         // 护主切换器
                         output.accept(ModItems.AGGRESSIVE_SWITCH_ITEM.get());
                         // 骑乘令

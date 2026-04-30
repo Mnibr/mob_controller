@@ -9,6 +9,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.*;
@@ -32,11 +33,21 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.xiaoyu.mob_controller.Config;
+import net.xiaoyu.mob_controller.MobController;
+import net.xiaoyu.mob_controller.advancement.MobControllerTriggers;
 import net.xiaoyu.mob_controller.mixin.AccessorSlimeMoveControl;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.monster.Zoglin;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.TamableAnimal;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.raid.Raid;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
@@ -113,6 +124,9 @@ public class MobControlUtil {
         }
         Player controller = MobControlledData.getController(mob, mob.level());
         if (controller == null || controller.isSpectator()) {
+            return;
+        }
+        if (mob.getPassengers().contains(controller)) {
             return;
         }
 
@@ -333,6 +347,7 @@ public class MobControlUtil {
     }
 
     private static void teleportMob(Mob mob, BlockPos pos) {
+        mob.fallDistance = 0.0F;
         mob.teleportTo(pos.getX(), pos.getY(), pos.getZ());
         mob.getNavigation().stop();
         mob.getNavigation().createPath(mob.blockPosition(), 10);
@@ -714,5 +729,122 @@ public class MobControlUtil {
         }
 
         return false;
+    }
+
+    /**
+     * 判断生物是否有主人或已被驯服（包括原版驯服、Owner/OwnerUUID NBT 标签，以及 aerwhale 特例）。
+     */
+    public static boolean hasOwnerOrTameTag(Mob mob) {
+        ResourceLocation key = ForgeRegistries.ENTITY_TYPES.getKey(mob.getType());
+        if (key != null && key.toString().equals("aether:aerwhale")) {
+            return true;
+        }
+        if (mob instanceof TamableAnimal) {
+            return true;
+        }
+        CompoundTag nbt = mob.saveWithoutId(new CompoundTag());
+        return nbt.contains("Owner") || nbt.contains("OwnerUUID") || nbt.contains("Tame");
+    }
+
+    /**
+     * 生成控制成功/失败的粒子效果（服务端）。
+     */
+    public static void spawnControlParticles(Mob mob, boolean success) {
+        if (mob.level().isClientSide) return;
+        ServerLevel serverLevel = (ServerLevel) mob.level();
+        if (success) {
+            serverLevel.sendParticles(ParticleTypes.HEART, mob.getX(), mob.getY() + mob.getBbHeight(), mob.getZ(),
+                    7, 0.5, 0.5, 0.5, 0.1);
+        } else {
+            serverLevel.sendParticles(ParticleTypes.ANGRY_VILLAGER, mob.getX(), mob.getY() + mob.getBbHeight(), mob.getZ(),
+                    7, 0.5, 0.5, 0.5, 0.1);
+        }
+    }
+
+    /**
+     * 执行生物控制的最终逻辑：清除袭击状态、加入控制、清理周边生物的目标。
+     */
+    public static void performControlMob(Player player, Mob mob) {
+        if (mob instanceof Raider raider) {
+            Raid raid = raider.getCurrentRaid();
+            if (raid != null) raid.removeFromRaid(raider, true);
+        }
+        MobControlledData.addControlledMob(player.getUUID(), mob);
+        if (!mob.level().isClientSide) {
+            for (Entity entity : mob.level().getEntitiesOfClass(Entity.class, mob.getBoundingBox().inflate(32.0))) {
+                if (entity instanceof Mob other && MobControlledData.isControlledEntity(other)) {
+                    if (other.getTarget() != null && other.getTarget().is(mob)) other.setTarget(null);
+                    if (mob.getTarget() != null && mob.getTarget().is(other)) mob.setTarget(null);
+                }
+            }
+        }
+        if (player instanceof ServerPlayer serverPlayer) {
+            MobControllerTriggers.TAME_MASTER.trigger(serverPlayer, mob);
+            MobController.grantRootAdvancementIfNeeded(serverPlayer);
+        }
+        if (player instanceof ServerPlayer serverPlayer) {
+            CompoundTag data = serverPlayer.getPersistentData();
+            if (!data.getBoolean("mob_controller_first_tame")) {
+                data.putBoolean("mob_controller_first_tame", true);
+                MobControllerTriggers.FIRST_COMPANION.trigger(serverPlayer);
+            }
+        }
+    }
+
+    /**
+     * 计算生物的可控制概率（基于最大生命值）。
+     * 原逻辑：最大生命 ≤ 50 → 1.0；超过 50 后每多 50 减少 0.2，最低 0.2。
+     */
+    public static float calculateControlChance(Mob mob) {
+        if (mob instanceof TamableAnimal) return 0.0f;
+        float maxHealth = mob.getMaxHealth();
+        if (maxHealth <= 50) return 1.0f;
+        float extraHealth = maxHealth - 50;
+        int segments = (int) (extraHealth / 50);
+        float reduction = segments * 0.2f;
+        return Math.max(1.0f - reduction, 0.2f);
+    }
+
+    /**
+     * 检查生物是否满足所有可控制条件（攻击力、生命上限、血量阈值、黑名单、高生命同类限制）。
+     * @param alwaysSuccess 是否忽略几率与血量条件（配置中的 always_success）
+     * @return true 表示可以尝试控制（之后还需要判断概率）
+     */
+    public static boolean canBeControlled(Mob mob, Player player, boolean alwaysSuccess) {
+        // 攻击力限制
+        if (!alwaysSuccess) {
+            AttributeInstance attackAttr = mob.getAttribute(Attributes.ATTACK_DAMAGE);
+            double attackDamage = attackAttr != null ? attackAttr.getValue() : 0.0;
+            if (attackDamage >= Config.ATTACK_LIMIT.get()) {
+                return false;
+            }
+        }
+        // 生命上限限制
+        if (!alwaysSuccess) {
+            float maxHealth = mob.getMaxHealth();
+            if (maxHealth >= Config.HEALTH_LIMIT.get()) {
+                return false;
+            }
+        }
+        // 当前生命值条件（固定血量或百分比）
+        if (!alwaysSuccess) {
+            float currentHealth = mob.getHealth();
+            float maxHealth = mob.getMaxHealth();
+            boolean healthConditionMet = (currentHealth <= Config.REQUIRED_HEALTH.get()) ||
+                    ((currentHealth / maxHealth) * 100.0 <= Config.HEALTH_PERCENT_THRESHOLD.get());
+            if (!healthConditionMet) {
+                return false;
+            }
+        }
+        // 黑名单 / 已有主人
+        if (Config.BLACKLISTED_MOBS.get().contains(EntityType.getKey(mob.getType()).toString())
+                || hasOwnerOrTameTag(mob)) {
+            return false;
+        }
+        // 高生命值同类限制
+        if (MobControlledData.hasPlayerControlledSameHighHealthMob(player.getUUID(), mob)) {
+            return false;
+        }
+        return true;
     }
 }

@@ -121,7 +121,7 @@ public abstract class MixinWitch {
     private boolean needsHealing(LivingEntity e) {
         float health = e.getHealth();
         float maxHealth = e.getMaxHealth();
-        return health <= Math.max(4.0F, maxHealth * 0.4F);
+        return health < maxHealth * 0.5F;
     }
 
     /**

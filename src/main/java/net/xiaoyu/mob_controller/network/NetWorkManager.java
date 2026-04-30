@@ -39,8 +39,11 @@ public class NetWorkManager {
                 MobControlCapabilitySyncPacket::new, MobControlCapabilitySyncPacket::handle);
         INSTANCE.registerMessage(id++, ApplyControlCommandPacket.class, ApplyControlCommandPacket::toBytes,
                 ApplyControlCommandPacket::new, ApplyControlCommandPacket::handle);
-        // 新增
         INSTANCE.registerMessage(id++, SwitchAggressiveModePacket.class, SwitchAggressiveModePacket::toBytes,
                 SwitchAggressiveModePacket::new, SwitchAggressiveModePacket::handle);
+        INSTANCE.registerMessage(id++, PlaySoundPacket.class, PlaySoundPacket::toBytes,
+                PlaySoundPacket::new, PlaySoundPacket::handle);
+        INSTANCE.registerMessage(id++, SyncSelectedModePacket.class, SyncSelectedModePacket::toBytes,
+                SyncSelectedModePacket::new, SyncSelectedModePacket::handle);
     }
 }

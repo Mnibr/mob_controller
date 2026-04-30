@@ -75,6 +75,17 @@ public class Config {
             .defineInRange("follow_move_to_distance", 8.0, 1.0, 64.0);
 
     /**
+     * 为特定实体类型单独配置最大乘客数。
+     * 格式：'entity_id;max_count'，例如 'minecraft:camel;2'。
+     * 未在此列表中的实体默认最大乘客数为 1。
+     */
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> MAX_RIDERS_PER_MOUNT = BUILDER
+            .comment("Define max number of riders that can mount a specific entity type. Format: 'entity_id;max_count'.",
+                    "Example: 'minecraft:camel;2' (camel supports 2 riders).",
+                    "If an entity is not listed, it defaults to 1 rider.")
+            .defineList("max_riders_per_mount", List.of("minecraft:camel;2"), obj -> obj instanceof String);
+
+    /**
      * 是否启用五谷杂粮的合成表。
      * true = 五谷杂粮可合成（生物控制器不可合成）；
      * false = 生物控制器可合成（五谷杂粮不可合成），默认为 false。
@@ -91,26 +102,21 @@ public class Config {
      * 以避免与原版驯服机制冲突。</p>
      */
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> BLACKLISTED_MOBS = BUILDER
-            .comment("List of mob that cannot be controlled")
+            .comment(
+                    "List of mob that cannot be controlled.",
+                    "The default mobs in the blacklist (except vanilla ones) are added due to serious code conflicts and incompatibility. Please remove them with caution."
+            )
             .defineList(
                     "blacklisted_mobs", Arrays.asList(
-                            "minecraft:parrot",
-                            "minecraft:wolf",
-                            "minecraft:cat",
-                            "minecraft:ocelot",
-                            "minecraft:horse",
-                            "minecraft:donkey",
-                            "minecraft:mule",
-                            "minecraft:llama",
-                            "minecraft:trader_llama",
-                            "minecraft:skeleton_horse",
-                            "minecraft:zombie_horse",
-                            "minecraft:camel",
                             "deep_aether:eots_segment",
                             "deep_aether:eots_controller",
                             "aether:sun_spirit",
                             "aether:slider",
-                            "lost_aether_content:aerwhale_king"
+                            "lost_aether_content:aerwhale_king",
+                            "alexsmobs:centipede_body",
+                            "alexsmobs:centipede_tail",
+                            "alexsmobs:void_worm",
+                            "alexsmobs:void_worm_part"
                     ), obj -> obj instanceof String
             );
 
@@ -250,6 +256,15 @@ public class Config {
     public static final ForgeConfigSpec.IntValue REQUIRED_HEALTH = BUILDER
             .comment("Absolute health threshold. If current health <= this value, the mob becomes eligible for control (alternative to health_percent_threshold).")
             .defineInRange("required_health", 10, 1, Integer.MAX_VALUE);
+
+    /**
+     * 是否允许受控流浪商人拥有无限交易（永不消耗交易次数）。
+     * true = 受控流浪商人的交易货物无限使用；
+     * false = 保留原版交易次数限制（通常为 12 次）。
+     */
+    public static final ForgeConfigSpec.BooleanValue INFINITE_TRADES_FOR_CONTROLLED_WANDERING_TRADER = BUILDER
+            .comment("Enable infinite trades for controlled wandering traders (reset uses to 0 after each trade).")
+            .define("infinite_trades_for_controlled_wandering_trader", true);
 
     /**
      * 已构建完成的配置规格，在 {@link MobController} 构造器中通过

@@ -156,7 +156,7 @@ public class MobControlledData {
         witch.getPersistentData().remove("mob_controller.supportCooldown");
     }
 
-    private static boolean isHighHealthMob(Mob mob) {
+    public static boolean isHighHealthMob(Mob mob) {
         return mob.getMaxHealth() > Config.HIGH_HEALTH_THRESHOLD.get();
     }
 

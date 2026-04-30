@@ -1,12 +1,15 @@
 package net.xiaoyu.mob_controller;
 
+import net.minecraft.advancements.Advancement;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.xiaoyu.mob_controller.advancement.MobControllerTriggers;
 import net.xiaoyu.mob_controller.capability.MobControlCapabilityRegister;
 import net.xiaoyu.mob_controller.event.MobControllerEvent;
 import net.xiaoyu.mob_controller.network.NetWorkManager;
@@ -59,13 +62,24 @@ public class MobController {
         ModEffects.POTIONS.register(eventBus);
         CreativeTab.register(eventBus);
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        ClientConfig.register();
         MinecraftForge.EVENT_BUS.register(MobControllerEvent.class);
         eventBus.register(MobControlCapabilityRegister.class);
         NetWorkManager.register();
         net.minecraftforge.common.crafting.CraftingHelper.register(ConfigRecipeCondition.Serializer.INSTANCE);
         ModSounds.SOUNDS.register(eventBus);
+        MobControllerTriggers.register();
     }
 
+    public static void grantRootAdvancementIfNeeded(ServerPlayer player) {
+        if (player == null) return;
+        Advancement rootAdv = player.server.getAdvancements().getAdvancement(location("root"));
+        if (rootAdv != null && !player.getAdvancements().getOrStartProgress(rootAdv).isDone()) {
+            player.getAdvancements().award(rootAdv, "auto");
+        }
+    }
+
+    public static final ResourceLocation ROOT_ADVANCEMENT = location("root");
     /**
      * 生成带有本模组命名空间的 {@link ResourceLocation}。
      *
