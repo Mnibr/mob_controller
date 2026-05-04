@@ -21,12 +21,17 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.IronGolem;
 import net.minecraft.world.entity.monster.MagmaCube;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.monster.Witch;
+import net.minecraft.world.entity.monster.Zoglin;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.monster.piglin.Piglin;
 import net.minecraft.world.entity.animal.Panda;
 import net.minecraft.world.entity.monster.warden.Warden;
@@ -42,6 +47,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import net.xiaoyu.mob_controller.Config;
 import net.xiaoyu.mob_controller.capability.MobControlCapability;
 import net.xiaoyu.mob_controller.capability.MobControlCapabilityProvider;
+import net.xiaoyu.mob_controller.item.LegionBannerItem;
 import net.xiaoyu.mob_controller.network.MobControlCapabilitySyncPacket;
 import net.xiaoyu.mob_controller.network.NetWorkManager;
 import org.jetbrains.annotations.Nullable;
@@ -130,6 +136,8 @@ public class MobControlledData {
         if (controllerUUID == null) {
             return false;
         }
+
+        setLegionMode(mob, false);
 
         LazyOptional<MobControlCapability> capability = mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY);
         capability.ifPresent(cap -> {
@@ -276,7 +284,7 @@ public class MobControlledData {
      */
     public static @Nullable UUID getControllerUUID(LivingEntity mob) {
         LazyOptional<MobControlCapability> capability = mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY);
-        return capability.map(MobControlCapability::getControllerUUID).orElse(null);
+        return capability.resolve().map(MobControlCapability::getControllerUUID).orElse(null);
     }
 
     /**
@@ -817,5 +825,99 @@ public class MobControlledData {
         );
 
         return true;
+    }
+
+    // 获取军团模式状态
+    public static boolean isLegionMode(Mob mob) {
+        return mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY)
+                .map(MobControlCapability::isLegionMode).orElse(false);
+    }
+
+    // 设置单个生物的军团模式（自动处理aggressive模式强制/恢复）
+    public static void setLegionMode(Mob mob, boolean enabled) {
+        mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY).ifPresent(cap -> {
+            cap.setLegionMode(enabled);
+            mob.setTarget(null);
+            NetWorkManager.INSTANCE.send(PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> mob),
+                    new MobControlCapabilitySyncPacket(mob.getId(), cap.serializeNBT()));
+        });
+    }
+
+    // 批量切换（半径以内所有玩家控制的生物）
+    public static int setLegionModeForAll(Player player, int radius, boolean enabled) {
+        if (player.level().isClientSide) return 0;
+        AABB area = player.getBoundingBox().inflate(radius);
+        List<Mob> controlledMobs = player.level().getEntitiesOfClass(Mob.class, area,
+                mob -> isControlledEntity(mob) && player.getUUID().equals(getControllerUUID(mob)));
+        for (Mob mob : controlledMobs) {
+            setLegionMode(mob, enabled);
+            mob.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100));
+        }
+        return controlledMobs.size();
+    }
+
+    /**
+     * 当玩家改变队伍颜色后，全局清理所有因颜色相同而不再敌对的军团战斗目标。
+     * 包括监守者特殊处理（清除目标、大脑记忆和针对性的愤怒）。
+     *
+     * @param changedPlayer 改变颜色的玩家
+     */
+    public static void clearLegionTargetsAfterPlayerColorChange(Player changedPlayer) {
+        if (changedPlayer.level().isClientSide) return;
+        ServerLevel level = (ServerLevel) changedPlayer.level();
+        UUID changedUUID = changedPlayer.getUUID();
+
+        // 搜索变色者周围 128 格内所有受控生物
+        List<Mob> allControlledMobs = level.getEntitiesOfClass(Mob.class,
+                changedPlayer.getBoundingBox().inflate(128),
+                mob -> isControlledEntity(mob));
+
+        for (Mob attacker : allControlledMobs) {
+            LivingEntity target = attacker.getTarget();
+            if (!(target instanceof Mob targetMob)) continue;
+            if (!isLegionMode(targetMob)) continue;
+
+            Player attackerOwner = getController(attacker, level);
+            if (attackerOwner == null) continue;
+            UUID targetControllerUUID = getControllerUUID(targetMob);
+            if (targetControllerUUID == null) continue;
+            Player targetOwner = level.getServer().getPlayerList().getPlayer(targetControllerUUID);
+            if (targetOwner == null) continue;
+
+            ChatFormatting attackerColor = LegionBannerItem.getLegionColor(attackerOwner);
+            ChatFormatting targetColor = LegionBannerItem.getLegionColor(targetOwner);
+
+            if (attackerColor == targetColor) {
+                // 1. 清除普通目标
+                attacker.setTarget(null);
+
+                // 2. 清除大脑类生物的记忆模块
+                if (attacker instanceof AbstractPiglin || attacker instanceof Hoglin || attacker instanceof Zoglin) {
+                    attacker.getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                    attacker.getBrain().eraseMemory(MemoryModuleType.ANGRY_AT);
+                }
+
+                // 3. 监守者特殊处理：额外清除大脑记忆、针对目标的愤怒
+                if (attacker instanceof Warden warden) {
+                    Brain<?> brain = warden.getBrain();
+                    if (brain != null) {
+                        brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                        brain.eraseMemory(MemoryModuleType.ROAR_TARGET);
+                    }
+                    // 清除对该特定目标的愤怒
+                    warden.clearAnger(targetMob);
+                }
+            }
+        }
+    }
+
+    public static int getLegionColorRGB(Mob mob) {
+        if (!isLegionMode(mob)) return -1;
+        Player controller = getController(mob, mob.level());
+        if (controller != null) {
+            ChatFormatting color = LegionBannerItem.getLegionColor(controller);
+            return LegionBannerItem.getColorRGB(color);
+        }
+        return -1;
     }
 }

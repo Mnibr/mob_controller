@@ -92,4 +92,9 @@ public class ModItems {
             "mode_select_control_command",
             () -> new ModeSelectControlCommandItem(new Item.Properties().stacksTo(1))
     );
+
+    public static final RegistryObject<Item> LEGION_BANNER_ITEM = ITEMS.register(
+            "legion_banner",
+            () -> new LegionBannerItem(new Item.Properties().stacksTo(1))
+    );
 }

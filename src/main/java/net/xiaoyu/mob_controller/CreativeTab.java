@@ -64,6 +64,8 @@ public class CreativeTab {
                         output.accept(ModItems.RIDE_COMMAND_ITEM.get());
                         // 盔甲编辑蓝图
                         output.accept(ModItems.ARMOR_EDITING_BLUEPRINT.get());
+
+                        output.accept(ModItems.LEGION_BANNER_ITEM.get());
                     })
                     .build()
     );

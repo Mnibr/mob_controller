@@ -413,6 +413,9 @@ public class MobControlUtil {
      * @return {@code true} 表示可视为敌对目标
      */
     public static boolean isEnemy(LivingEntity controlledMob, @Nullable Entity target) {
+        if (isAlly(controlledMob, target)) {
+            return false;
+        }
         if (target == null) {
             return false;
         }
@@ -724,6 +727,13 @@ public class MobControlUtil {
         if (target instanceof LivingEntity livingTarget && MobControlledData.isControlledEntity(livingTarget)) {
             UUID targetControllerUUID = MobControlledData.getControllerUUID(livingTarget);
             if (targetControllerUUID != null && targetControllerUUID.equals(controllerUUID)) {
+                return true;
+            }
+        }
+
+        // 情况4: 目标是坐骑（有乘客），且任一乘客是友军（递归检查）
+        for (Entity passenger : target.getPassengers()) {
+            if (isAlly(attacker, passenger)) {
                 return true;
             }
         }
