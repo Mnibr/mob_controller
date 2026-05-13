@@ -7,8 +7,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import net.xiaoyu.mob_controller.capability.MobControlCapabilityProvider;
-import net.xiaoyu.mob_controller.network.MobControlCapabilitySyncPacket;
-import net.xiaoyu.mob_controller.network.SyncLegionColorPacket;
+import net.xiaoyu.mob_controller.network.*;
 
 import java.util.Map;
 import java.util.UUID;
@@ -18,6 +17,7 @@ import java.util.function.Supplier;
 public class ClientPacketHandler {
 
     private static final Map<UUID, Integer> LEGION_COLORS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Boolean> LEGION_MODES = new ConcurrentHashMap<>();
 
     public static void handleMobControlCapabilitySync(Supplier<NetworkEvent.Context> ctx, MobControlCapabilitySyncPacket packet) {
         if (ctx.get().getDirection() != NetworkDirection.PLAY_TO_CLIENT) return;
@@ -48,5 +48,50 @@ public class ClientPacketHandler {
 
     public static void removePlayerColor(UUID playerUUID) {
         LEGION_COLORS.remove(playerUUID);
+    }
+
+    // 军团模式缓存
+    public static void handleSyncLegionMode(SyncLegionModePacket packet) {
+        LEGION_MODES.put(packet.playerUUID(), packet.legionMode());
+    }
+
+    /**
+     * 客户端专用：获取玩家是否处于军团模式（从缓存中读取，保证实时性）
+     */
+    public static boolean isPlayerInLegionMode(UUID playerUUID) {
+        return LEGION_MODES.getOrDefault(playerUUID, false);
+    }
+
+    public static void removePlayerLegionMode(UUID playerUUID) {
+        LEGION_MODES.remove(playerUUID);
+    }
+
+    // 添加缓存
+    private static final Map<Integer, Boolean> WAXED_CACHE = new ConcurrentHashMap<>();
+
+    public static void handleSyncWaxed(SyncWaxedPacket packet) {
+        WAXED_CACHE.put(packet.entityId(), packet.waxed());
+    }
+
+    public static boolean isEntityWaxed(int entityId) {
+        return WAXED_CACHE.getOrDefault(entityId, false);
+    }
+
+    public static void removeEntityWaxed(int entityId) {
+        WAXED_CACHE.remove(entityId);
+    }
+
+    private static final Map<Integer, Boolean> CHILLED_CACHE = new ConcurrentHashMap<>();
+
+    public static void handleSyncChilled(SyncChilledPacket packet) {
+        CHILLED_CACHE.put(packet.entityId(), packet.chilled());
+    }
+
+    public static boolean isEntityChilled(int entityId) {
+        return CHILLED_CACHE.getOrDefault(entityId, false);
+    }
+
+    public static void removeEntityChilled(int entityId) {
+        CHILLED_CACHE.remove(entityId);
     }
 }

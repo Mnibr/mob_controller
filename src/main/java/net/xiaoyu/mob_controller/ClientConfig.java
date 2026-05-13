@@ -22,6 +22,6 @@ public class ClientConfig {
     }
 
     public static void register() {
-        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SPEC);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SPEC, "mob_controller/mob_controller-client.toml");
     }
 }

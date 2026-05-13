@@ -51,5 +51,15 @@ public class NetWorkManager {
                 LegionModeBatchPacket::new, LegionModeBatchPacket::handle);
         INSTANCE.registerMessage(id++, SyncLegionColorPacket.class, SyncLegionColorPacket::toBytes,
                 SyncLegionColorPacket::new, SyncLegionColorPacket::handle);
+        INSTANCE.registerMessage(id++, SyncLegionModePacket.class, SyncLegionModePacket::toBytes,
+                SyncLegionModePacket::new, SyncLegionModePacket::handle);
+        INSTANCE.registerMessage(id++, TogglePlayerLegionModePacket.class, TogglePlayerLegionModePacket::toBytes,
+                TogglePlayerLegionModePacket::new, TogglePlayerLegionModePacket::handle);
+        INSTANCE.registerMessage(id++, PlayerJumpPacket.class, PlayerJumpPacket::toBytes,
+                PlayerJumpPacket::new, PlayerJumpPacket::handle);
+        INSTANCE.registerMessage(id++, SyncWaxedPacket.class, SyncWaxedPacket::toBytes,
+                SyncWaxedPacket::new, SyncWaxedPacket::handle);
+        INSTANCE.registerMessage(id++, SyncChilledPacket.class, SyncChilledPacket::toBytes,
+                SyncChilledPacket::new, SyncChilledPacket::handle);
     }
 }

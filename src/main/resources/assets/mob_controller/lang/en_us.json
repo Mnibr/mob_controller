@@ -118,5 +118,8 @@
   "mob_controller.team.red": "Red Team",
   "mob_controller.team.light_purple": "Light Purple Team",
   "mob_controller.team.yellow": "Yellow Team",
-  "mob_controller.team.white": "White Team"
+  "mob_controller.team.white": "White Team",
+  "mob_controller.message.legion_player_enable": "§6You have joined Legion Mode",
+  "mob_controller.message.legion_player_disable": "§6You have left Legion Mode",
+  "mob_controller.jade.player_legion": "Current team: %s"
 }

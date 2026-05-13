@@ -28,7 +28,7 @@
   "mob_controller.message.no_controlled_mobs_nearby": "附近没有受控生物",
   "mob_controller.message.not_controlled": "该生物未被控制",
   "mob_controller.message.not_owner": "你不是该生物的控制者",
-  "mob_controller.message.single_switch": "%s %s。",
+  "mob_controller.message.single_switch": "%s %s",
   "mob_controller.message.no_controlled_mob_target": "未瞄准受控生物！",
   "mob_controller.message.ride_selected": "已选中 %s 作为骑手",
   "mob_controller.message.ride_performed": "%s 骑上了 %s ",
@@ -114,5 +114,8 @@
   "mob_controller.team.red": "红队",
   "mob_controller.team.light_purple": "浅紫队",
   "mob_controller.team.yellow": "黄队",
-  "mob_controller.team.white": "白队"
+  "mob_controller.team.white": "白队",
+  "mob_controller.message.legion_player_enable": "§6你已加入军团模式",
+  "mob_controller.message.legion_player_disable": "§6你已退出军团模式",
+  "mob_controller.jade.player_legion": "军团: %s"
 }

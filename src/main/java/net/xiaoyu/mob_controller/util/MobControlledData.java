@@ -149,6 +149,15 @@ public class MobControlledData {
             cap.setAggressiveMode(false);
         });
 
+        if (!mob.level().isClientSide) {
+            capability.ifPresent(cap -> {
+                NetWorkManager.INSTANCE.send(
+                        net.minecraftforge.network.PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> mob),
+                        new net.xiaoyu.mob_controller.network.MobControlCapabilitySyncPacket(mob.getId(), cap.serializeNBT())
+                );
+            });
+        }
+
         if (mob instanceof Raider raider && !(mob instanceof Witch)) {
             MobControlUtil.restoreRaiderTargets(raider);
         }
@@ -600,6 +609,12 @@ public class MobControlledData {
                     respawnedMob.getPersistentData().putBoolean("mob_controller:respawned", true);
                 }
 
+                if (respawnedMob instanceof twilightforest.entity.boss.Lich lich) {
+                    lich.setShieldStrength(6);
+                }
+
+                resetBossPhaseIfNeeded(respawnedMob);
+
                 addControlledMob(data.controllerUUID(), respawnedMob);
                 respawnedMob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY)
                         .ifPresent(cap -> cap.deserializeNBT(data.capabilityNbt().copy()));
@@ -620,6 +635,64 @@ public class MobControlledData {
                 PENDING_RESPAWNS.remove(deadMobUUID);
             }
             savePendingRespawns(server);
+        }
+    }
+
+    /**
+     * 重生后重置灾变 Boss 的阶段状态到一阶段。
+     * 仅在灾变模组加载时执行。
+     */
+    private static void resetBossPhaseIfNeeded(Mob mob) {
+        if (!net.minecraftforge.fml.ModList.get().isLoaded("cataclysm")) return;
+
+        // Ender Guardian
+        if (mob instanceof com.github.L_Ender.cataclysm.entity.AnimationMonster.BossMonsters.Ender_Guardian_Entity guardian) {
+            guardian.setIsHelmetless(false);
+            guardian.setUsedMassDestruction(false);
+        }
+        // Netherite Monstrosity
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.InternalAnimationMonster.IABossMonsters.NewNetherite_Monstrosity.Netherite_Monstrosity_Entity monstrosity) {
+            monstrosity.setIsBerserk(false);
+        }
+        // The Harbinger
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.AnimationMonster.BossMonsters.The_Harbinger_Entity harbinger) {
+            harbinger.setIsLaserMode(false);
+            harbinger.setOverload(0);
+            harbinger.setIsAct(true);
+        }
+        // Ancient Remnant
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.InternalAnimationMonster.IABossMonsters.Ancient_Remnant.Ancient_Remnant_Entity remnant) {
+            remnant.setIsPower(false);
+            remnant.setRage(0);
+            remnant.setNecklace(true);
+        }
+        // Scylla
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.InternalAnimationMonster.IABossMonsters.Scylla.Scylla_Entity scylla) {
+            scylla.setPhase(0);
+            scylla.setEye(false);
+            scylla.setAct(true);
+            scylla.setChainAnchor(false);
+            scylla.setFlying(false);
+        }
+        // Ignis
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.AnimationMonster.BossMonsters.Ignis_Entity ignis) {
+            ignis.setBossPhase(0);
+            ignis.setIsShieldBreak(false);
+            ignis.setShieldDurability(0);
+            ignis.setShowShield(true);
+            ignis.setIsBlocking(false);
+            ignis.setIsSword(false);
+        }
+        // The Leviathan (修正包路径)
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.AnimationMonster.BossMonsters.The_Leviathan.The_Leviathan_Entity leviathan) {
+            leviathan.setMeltDown(false);
+            leviathan.setBlastChance(0);
+            leviathan.setModeChance(0);
+        }
+        // Maledictus (修正包路径)
+        else if (mob instanceof com.github.L_Ender.cataclysm.entity.InternalAnimationMonster.IABossMonsters.Maledictus.Maledictus_Entity maledictus) {
+            maledictus.setRageMeter(0);
+            maledictus.setWeapon(0);
         }
     }
 
@@ -858,7 +931,8 @@ public class MobControlledData {
 
     /**
      * 当玩家改变队伍颜色后，全局清理所有因颜色相同而不再敌对的军团战斗目标。
-     * 包括监守者特殊处理（清除目标、大脑记忆和针对性的愤怒）。
+     * 包括生物之间的军团目标，以及生物对该玩家的攻击目标。
+     * 注意：由玩家直接指挥的攻击（系统攻击）不会被清除。
      *
      * @param changedPlayer 改变颜色的玩家
      */
@@ -867,7 +941,7 @@ public class MobControlledData {
         ServerLevel level = (ServerLevel) changedPlayer.level();
         UUID changedUUID = changedPlayer.getUUID();
 
-        // 搜索变色者周围 128 格内所有受控生物
+        // 1. 清理生物之间的军团目标
         List<Mob> allControlledMobs = level.getEntitiesOfClass(Mob.class,
                 changedPlayer.getBoundingBox().inflate(128),
                 mob -> isControlledEntity(mob));
@@ -876,6 +950,11 @@ public class MobControlledData {
             LivingEntity target = attacker.getTarget();
             if (!(target instanceof Mob targetMob)) continue;
             if (!isLegionMode(targetMob)) continue;
+
+            // 如果攻击是由玩家指令发起的（系统攻击），则保留，不清除
+            if (isSystemAttack(attacker)) {
+                continue;
+            }
 
             Player attackerOwner = getController(attacker, level);
             if (attackerOwner == null) continue;
@@ -888,27 +967,26 @@ public class MobControlledData {
             ChatFormatting targetColor = LegionBannerItem.getLegionColor(targetOwner);
 
             if (attackerColor == targetColor) {
-                // 1. 清除普通目标
                 attacker.setTarget(null);
 
-                // 2. 清除大脑类生物的记忆模块
                 if (attacker instanceof AbstractPiglin || attacker instanceof Hoglin || attacker instanceof Zoglin) {
                     attacker.getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
                     attacker.getBrain().eraseMemory(MemoryModuleType.ANGRY_AT);
                 }
 
-                // 3. 监守者特殊处理：额外清除大脑记忆、针对目标的愤怒
                 if (attacker instanceof Warden warden) {
                     Brain<?> brain = warden.getBrain();
                     if (brain != null) {
                         brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
                         brain.eraseMemory(MemoryModuleType.ROAR_TARGET);
                     }
-                    // 清除对该特定目标的愤怒
                     warden.clearAnger(targetMob);
                 }
             }
         }
+
+        // 2. 清理所有受控生物对该玩家的攻击目标（内部已处理系统攻击跳过）
+        clearControlledMobsTargetOnPlayer(changedPlayer);
     }
 
     public static int getLegionColorRGB(Mob mob) {
@@ -919,5 +997,38 @@ public class MobControlledData {
             return LegionBannerItem.getColorRGB(color);
         }
         return -1;
+    }
+
+    /**
+     * 清除所有受控生物对指定玩家的攻击目标（用于玩家颜色改变或军团模式切换时）。
+     * 注意：如果生物是由主人指令（系统攻击）攻击该玩家的，则不清除，以尊重玩家指挥。
+     */
+    public static void clearControlledMobsTargetOnPlayer(Player player) {
+        if (player.level().isClientSide) return;
+        ServerLevel level = (ServerLevel) player.level();
+        List<Mob> allControlled = level.getEntitiesOfClass(Mob.class,
+                player.getBoundingBox().inflate(128),
+                mob -> MobControlledData.isControlledEntity(mob));
+        for (Mob mob : allControlled) {
+            if (mob.getTarget() == player) {
+                // 如果是由玩家指令发起的攻击（系统攻击），则保留，不清除
+                if (MobControlledData.isSystemAttack(mob)) {
+                    continue;
+                }
+                mob.setTarget(null);
+                if (mob instanceof AbstractPiglin || mob instanceof Hoglin || mob instanceof Zoglin) {
+                    Brain<?> brain = mob.getBrain();
+                    brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                    brain.eraseMemory(MemoryModuleType.ANGRY_AT);
+                } else if (mob instanceof Warden warden) {
+                    Brain<?> brain = warden.getBrain();
+                    if (brain != null) {
+                        brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                        brain.eraseMemory(MemoryModuleType.ROAR_TARGET);
+                    }
+                    warden.clearAnger(player);
+                }
+            }
+        }
     }
 }

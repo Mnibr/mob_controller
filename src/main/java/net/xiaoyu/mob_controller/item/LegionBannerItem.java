@@ -4,16 +4,28 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.Brain;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.monster.Zoglin;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
+import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import net.minecraftforge.network.PacketDistributor;
+import net.xiaoyu.mob_controller.network.NetWorkManager;
+import net.xiaoyu.mob_controller.network.SyncLegionModePacket;
 import net.xiaoyu.mob_controller.network.client.ClientPacketHandler;
 import net.xiaoyu.mob_controller.util.MobControlledData;
 import org.jetbrains.annotations.Nullable;
@@ -21,6 +33,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 竞技之旗物品。
@@ -29,6 +42,7 @@ import java.util.Map;
  *   <li>左/右键切换队伍颜色（非潜行）</li>
  *   <li>潜行 + 左/右键批量启用/禁用军团模式</li>
  *   <li>右键点击受控生物可单独禁用其军团模式</li>
+ *   <li>中键切换玩家自身军团模式</li>
  *   <li>工具提示实时显示当前队伍颜色</li>
  * </ul>
  */
@@ -237,5 +251,71 @@ public class LegionBannerItem extends Item {
         }
         // 后备（例如在 JEI 中查看时无法获取玩家上下文）
         tooltip.add(Component.translatable("mob_controller.tooltip.legion_banner", "?"));
+    }
+
+    // ========== 玩家自身军团模式管理 ==========
+
+    /**
+     * 检查玩家是否处于军团模式。
+     */
+    public static boolean isPlayerInLegionMode(Player player) {
+        return player.getPersistentData().getBoolean("mob_controller_player_legion_mode");
+    }
+
+    /**
+     * 设置玩家的军团模式，并广播给所有客户端。
+     * @param player 目标玩家（必须是 ServerPlayer）
+     * @param enabled 是否启用
+     */
+    public static void setPlayerLegionMode(ServerPlayer player, boolean enabled) {
+        boolean old = isPlayerInLegionMode(player);
+        if (old == enabled) return;
+        player.getPersistentData().putBoolean("mob_controller_player_legion_mode", enabled);
+        // 同步给所有在线玩家
+        NetWorkManager.INSTANCE.send(PacketDistributor.ALL.noArg(),
+                new SyncLegionModePacket(player.getUUID(), enabled));
+        // 通知消息（使用 MutableComponent 以支持 withStyle）
+        MutableComponent msg = enabled ?
+                Component.translatable("mob_controller.message.legion_player_enable") :
+                Component.translatable("mob_controller.message.legion_player_disable");
+        player.displayClientMessage(msg.withStyle(ChatFormatting.GOLD), true);
+        // 清理因切换而不再敌对的战斗目标（周围生物对玩家的仇恨清除）
+        clearLegionTargetsForPlayer(player);
+    }
+
+    /**
+     * 切换玩家的军团模式。
+     */
+    public static void togglePlayerLegionMode(ServerPlayer player) {
+        setPlayerLegionMode(player, !isPlayerInLegionMode(player));
+    }
+
+    /**
+     * 当玩家军团模式改变时，清除所有受控生物对该玩家的攻击目标。
+     */
+    private static void clearLegionTargetsForPlayer(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
+        List<Mob> allControlled = level.getEntitiesOfClass(Mob.class,
+                player.getBoundingBox().inflate(128),
+                mob -> MobControlledData.isControlledEntity(mob));
+        for (Mob mob : allControlled) {
+            if (mob.getTarget() == player) {
+                mob.setTarget(null);
+                // 清理大脑记忆（猪灵、疣猪兽、僵尸疣猪兽）
+                if (mob instanceof AbstractPiglin || mob instanceof Hoglin || mob instanceof Zoglin) {
+                    Brain<?> brain = mob.getBrain();
+                    brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                    brain.eraseMemory(MemoryModuleType.ANGRY_AT);
+                }
+                // 监守者特殊处理
+                else if (mob instanceof Warden warden) {
+                    Brain<?> brain = warden.getBrain();
+                    brain.eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                    brain.eraseMemory(MemoryModuleType.ROAR_TARGET);
+                    // 清除愤怒系统中的目标
+                    warden.clearAnger(player);
+                }
+            }
+        }
     }
 }

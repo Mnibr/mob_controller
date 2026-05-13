@@ -26,6 +26,8 @@ import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.monster.warden.AngerLevel;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.npc.AbstractVillager;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.WanderingTrader;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.raid.Raider;
 import net.minecraft.world.level.block.state.BlockState;
@@ -51,9 +53,8 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 生物控制系统的通用工具类。
@@ -173,7 +174,11 @@ public class MobControlUtil {
                 } catch (Exception ignored) {
                 }
             } else {
-                mob.getNavigation().moveTo(controller, 1.0D);
+                double speed = 1.0D;
+                if (mob instanceof Villager || mob instanceof WanderingTrader) {
+                    speed = 0.35D;
+                }
+                mob.getNavigation().moveTo(controller, speed);
                 if (mob.getMoveControl() instanceof AccessorSlimeMoveControl slimeMoveControl) {
                     slimeMoveControl.mob_controller$setDirection(getYawTowards(mob, controller), true);
                 }
@@ -290,21 +295,155 @@ public class MobControlUtil {
         return Config.STAY_WELDED_SPECIAL_AI_MOBS.get().contains(entityId);
     }
 
+    // 新增枚举
+    public enum RideableType {
+        LAND,        // 陆地生物，原版骑乘 + 可配置跳跃高度
+        AQUATIC,     // 水生生物，守卫者/海豚式控制，可配置离水甩下
+        FLYING,      // 纯飞行生物，自定义飞行控制
+        FLYING_LAND, // 飞行陆地：地面行走 + 空格上升
+        AMPHIBIAN    // 两栖：水中用水生控制，陆上用陆地跳跃控制
+    }
+
+    // 陆地骑乘跳跃高度缓存 (key: entity registry name, value: jump height)
+    private static final Map<String, Double> LAND_JUMP_HEIGHT_CACHE = new ConcurrentHashMap<>();
+    // 两栖骑乘陆地跳跃高度缓存
+    private static final Map<String, Double> AMPHIBIAN_JUMP_HEIGHT_CACHE = new ConcurrentHashMap<>();
+    // 飞行陆地骑乘集合 (仅 entity id)
+    private static final Set<String> FLYING_LAND_SET = ConcurrentHashMap.newKeySet();
+
+    // 缓存水生生物的离水甩下标志
+    private static final Map<String, Boolean> AQUATIC_DISMOUNT_FLAG = new ConcurrentHashMap<>();
+    private static boolean rideableCacheInitialized = false;
+
+    // 初始化缓存（从配置读取）
+    private static void initRideableCache() {
+        if (rideableCacheInitialized) return;
+        synchronized (MobControlUtil.class) {
+            if (rideableCacheInitialized) return;
+            AQUATIC_DISMOUNT_FLAG.clear();
+            LAND_JUMP_HEIGHT_CACHE.clear();
+            AMPHIBIAN_JUMP_HEIGHT_CACHE.clear();
+            FLYING_LAND_SET.clear();
+
+            // 解析水生配置 (原有逻辑)
+            for (String entry : Config.AQUATIC_RIDEABLE_MOBS.get()) {
+                String[] parts = entry.split(",");
+                if (parts.length == 2) {
+                    AQUATIC_DISMOUNT_FLAG.put(parts[0], Boolean.parseBoolean(parts[1]));
+                }
+            }
+            // 解析陆地配置 (新格式：id,height)
+            for (String entry : Config.LAND_RIDEABLE_MOBS.get()) {
+                parseAndCacheLandRideable(entry);
+            }
+            // 解析两栖配置 (格式同陆地)
+            for (String entry : Config.RIDE_AMPHIBIAN_MOBS.get()) {
+                parseAndCacheAmphibianRideable(entry);
+            }
+            // 解析飞行陆地配置 (仅id)
+            for (String entry : Config.RIDE_FLYING_LAND_MOBS.get()) {
+                FLYING_LAND_SET.add(entry);
+            }
+            rideableCacheInitialized = true;
+        }
+    }
+
+    private static void parseAndCacheLandRideable(String entry) {
+        String[] parts = entry.split(",");
+        if (parts.length >= 1) {
+            double jump = 0.42; // 默认跳跃力度
+            if (parts.length >= 2) {
+                try { jump = Double.parseDouble(parts[1]); } catch (NumberFormatException ignored) {}
+            }
+            LAND_JUMP_HEIGHT_CACHE.put(parts[0], jump);
+        }
+    }
+
+    private static void parseAndCacheAmphibianRideable(String entry) {
+        String[] parts = entry.split(",");
+        if (parts.length >= 1) {
+            double jump = 0.42;
+            if (parts.length >= 2) {
+                try { jump = Double.parseDouble(parts[1]); } catch (NumberFormatException ignored) {}
+            }
+            AMPHIBIAN_JUMP_HEIGHT_CACHE.put(parts[0], jump);
+        }
+    }
+
+    // 重设缓存（配置重载时调用）
+    public static void resetRideableCache() {
+        rideableCacheInitialized = false;
+        AQUATIC_DISMOUNT_FLAG.clear();
+    }
+
     /**
-     * 判断受控生物是否属于当前支持直接骑乘的类型。
+     * 获取生物的可骑乘类型，若不在任何列表中则返回 null。
+     */
+    @Nullable
+    public static RideableType getRideableType(Mob mob) {
+        initRideableCache();
+        ResourceLocation key = EntityType.getKey(mob.getType());
+        if (key == null) return null;
+        String id = key.toString();
+
+        // 1. 检查飞行陆地列表
+        if (FLYING_LAND_SET.contains(id)) {
+            return RideableType.FLYING_LAND;
+        }
+        // 2. 检查两栖列表
+        if (AMPHIBIAN_JUMP_HEIGHT_CACHE.containsKey(id)) {
+            return RideableType.AMPHIBIAN;
+        }
+        // 3. 检查陆地列表
+        if (LAND_JUMP_HEIGHT_CACHE.containsKey(id)) {
+            return RideableType.LAND;
+        }
+        // 4. 检查水生列表
+        if (AQUATIC_DISMOUNT_FLAG.containsKey(id)) {
+            return RideableType.AQUATIC;
+        }
+        // 5. 检查飞行列表
+        if (Config.FLYING_RIDEABLE_MOBS.get().contains(id)) {
+            return RideableType.FLYING;
+        }
+        return null;
+    }
+
+    public static double getLandJumpHeight(Mob mob) {
+        ResourceLocation key = EntityType.getKey(mob.getType());
+        if (key == null) return 0.42;
+        return LAND_JUMP_HEIGHT_CACHE.getOrDefault(key.toString(), 0.42);
+    }
+
+    public static double getAmphibianLandJumpHeight(Mob mob) {
+        ResourceLocation key = EntityType.getKey(mob.getType());
+        if (key == null) return 0.42;
+        return AMPHIBIAN_JUMP_HEIGHT_CACHE.getOrDefault(key.toString(), 0.42);
+    }
+
+    public static void resetAllRideableCache() {
+        rideableCacheInitialized = false;
+        AQUATIC_DISMOUNT_FLAG.clear();
+        LAND_JUMP_HEIGHT_CACHE.clear();
+        AMPHIBIAN_JUMP_HEIGHT_CACHE.clear();
+        FLYING_LAND_SET.clear();
+    }
+
+    /**
+     * 判断生物是否可以直接骑乘（空手右键即可骑乘）。
      */
     public static boolean isDirectRideableControlledMob(Mob mob) {
-        return mob instanceof Guardian
-                || mob instanceof Hoglin
-                || mob instanceof Zoglin
-                || mob instanceof Ravager
-                || mob instanceof Cow
-                || mob instanceof Sheep
-                || mob instanceof Dolphin
-                || mob instanceof Panda
-                || mob instanceof PolarBear
-                || mob instanceof Goat
-                || mob.getType().equals(EntityType.SNIFFER);
+        return getRideableType(mob) != null;
+    }
+
+    /**
+     * 获取水生生物的离水甩下标志。
+     * @return true 表示离开水强制下马，false 表示不下马（即使配置不存在也返回 false）
+     */
+    public static boolean shouldDismountOnLeaveWater(Mob mob) {
+        ResourceLocation key = EntityType.getKey(mob.getType());
+        if (key == null) return false;
+        return AQUATIC_DISMOUNT_FLAG.getOrDefault(key.toString(), false);
     }
 
     /**
@@ -542,6 +681,13 @@ public class MobControlUtil {
      * 判定目标是否允许继续作为当前战斗目标。
      */
     public static boolean canKeepCombatTarget(LivingEntity controlledMob, @Nullable LivingEntity target) {
+        // 系统攻击模式下，如果有有效当前目标，只允许该目标
+        if (controlledMob instanceof Mob mob && MobControlledData.isSystemAttack(mob)) {
+            LivingEntity currentTarget = mob.getTarget();
+            if (currentTarget != null && currentTarget.isAlive()) {
+                return target == currentTarget;
+            }
+        }
         return isEnemy(controlledMob, target)
                 || (controlledMob instanceof Mob mob
                 && MobControlledData.isSystemAttack(mob)
@@ -746,9 +892,12 @@ public class MobControlUtil {
      */
     public static boolean hasOwnerOrTameTag(Mob mob) {
         ResourceLocation key = ForgeRegistries.ENTITY_TYPES.getKey(mob.getType());
-        if (key != null && key.toString().equals("aether:aerwhale")) {
-            return true;
+        if (key != null && Config.IGNORE_OWNER_TAG_MOBS.get().contains(key.toString())) {
+            return false;
         }
+        /* if (key != null && key.toString().equals("aether:aerwhale")) {
+            return true;
+        } */
         if (mob instanceof TamableAnimal) {
             return true;
         }
@@ -856,5 +1005,49 @@ public class MobControlUtil {
             return false;
         }
         return true;
+    }
+    // 新增静态字段
+    private static final Map<String, Vec3> RIDE_OFFSET_CACHE = new ConcurrentHashMap<>();
+    private static boolean rideOffsetCacheInitialized = false;
+
+    private static void initRideOffsetCache() {
+        if (rideOffsetCacheInitialized) return;
+        synchronized (MobControlUtil.class) {
+            if (rideOffsetCacheInitialized) return;
+            RIDE_OFFSET_CACHE.clear();
+            for (String entry : Config.RIDE_POSITION_Y_OFFSET.get()) {
+                String[] parts = entry.split(",");
+                if (parts.length >= 2) {
+                    try {
+                        String entityId = parts[0];
+                        double x = 0.0, y = 0.0, z = 0.0;
+                        if (parts.length == 2) {
+                            // 旧格式：只提供 Y 偏移
+                            y = Double.parseDouble(parts[1]);
+                        } else if (parts.length == 4) {
+                            x = Double.parseDouble(parts[1]);
+                            y = Double.parseDouble(parts[2]);
+                            z = Double.parseDouble(parts[3]);
+                        } else {
+                            continue; // 格式错误，跳过
+                        }
+                        RIDE_OFFSET_CACHE.put(entityId, new Vec3(x, y, z));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            rideOffsetCacheInitialized = true;
+        }
+    }
+
+    public static void resetRideOffsetCache() {
+        rideOffsetCacheInitialized = false;
+        RIDE_OFFSET_CACHE.clear();
+    }
+
+    public static Vec3 getRideOffset(Mob mount) {
+        initRideOffsetCache();
+        ResourceLocation key = EntityType.getKey(mount.getType());
+        if (key == null) return Vec3.ZERO;
+        return RIDE_OFFSET_CACHE.getOrDefault(key.toString(), Vec3.ZERO);
     }
 }

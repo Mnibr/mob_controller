@@ -3,6 +3,7 @@ package net.xiaoyu.mob_controller.event;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -39,11 +40,7 @@ import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.EntityMobGriefingEvent;
-import net.minecraftforge.event.entity.living.LivingAttackEvent;
-import net.minecraftforge.event.entity.living.LivingChangeTargetEvent;
-import net.minecraftforge.event.entity.living.LivingDeathEvent;
-import net.minecraftforge.event.entity.living.LivingEvent;
-import net.minecraftforge.event.entity.living.LivingHurtEvent;
+import net.minecraftforge.event.entity.living.*;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -57,6 +54,7 @@ import net.xiaoyu.mob_controller.Config;
 import net.xiaoyu.mob_controller.MobController;
 import net.xiaoyu.mob_controller.advancement.MobControllerTriggers;
 import net.xiaoyu.mob_controller.capability.MobControlCapabilityProvider;
+import net.xiaoyu.mob_controller.config.FeatureConfig;
 import net.xiaoyu.mob_controller.item.AggressiveSwitchItem;
 import net.xiaoyu.mob_controller.item.LegionBannerItem;
 import net.xiaoyu.mob_controller.item.ModeSelectControlCommandItem;
@@ -66,6 +64,9 @@ import net.xiaoyu.mob_controller.registry.ModItems;
 import net.xiaoyu.mob_controller.registry.ModSounds;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
+import net.minecraft.nbt.CompoundTag;
+import net.xiaoyu.mob_controller.network.SyncLegionColorPacket;
+import net.xiaoyu.mob_controller.network.SyncLegionModePacket;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;
@@ -82,6 +83,63 @@ import java.util.UUID;
 @Mod.EventBusSubscriber
 public class MobControllerEvent {
     private static final int HEAL_INTERVAL_TICKS = 2;
+
+    /**
+     * 玩家重生（从死亡状态复活）时，将军团模式状态和队伍颜色从旧玩家复制到新玩家。
+     * 因为 PersistentData 不会自动保留，需要在 Clone 事件中手动迁移。
+     *
+     * @param event PlayerEvent.Clone 事件
+     */
+    @SubscribeEvent
+    public static void onPlayerClone(PlayerEvent.Clone event) {
+        Player original = event.getOriginal();
+        Player player = event.getEntity();
+        if (event.isWasDeath() && original != null && player != null) {
+            CompoundTag oldData = original.getPersistentData();
+            CompoundTag newData = player.getPersistentData();
+
+            // 需要复制的键列表
+            String[] keysToCopy = {
+                    "mob_controller_tamed_types",
+                    "mob_controller_had_high_health",
+                    "mob_controller_first_tame",
+                    "LegionColor",
+                    "mob_controller_player_legion_mode"
+            };
+            for (String key : keysToCopy) {
+                if (oldData.contains(key)) {
+                    // 简单处理基本类型
+                    net.minecraft.nbt.Tag tag = oldData.get(key);
+                    if (tag instanceof net.minecraft.nbt.StringTag) {
+                        newData.putString(key, oldData.getString(key));
+                    } else if (tag instanceof net.minecraft.nbt.ByteTag) {
+                        newData.putBoolean(key, oldData.getBoolean(key));
+                    } else if (tag instanceof net.minecraft.nbt.IntTag) {
+                        newData.putInt(key, oldData.getInt(key));
+                    } else if (tag instanceof net.minecraft.nbt.LongTag) {
+                        newData.putLong(key, oldData.getLong(key));
+                    } else if (tag instanceof net.minecraft.nbt.DoubleTag) {
+                        newData.putDouble(key, oldData.getDouble(key));
+                    } else if (tag instanceof net.minecraft.nbt.CompoundTag) {
+                        newData.put(key, tag.copy());
+                    } else if (tag instanceof net.minecraft.nbt.ListTag) {
+                        newData.put(key, tag.copy());
+                    }
+                }
+            }
+
+            // 如果是服务端玩家，将军团模式和队伍颜色重新同步给所有客户端
+            if (player instanceof ServerPlayer serverPlayer) {
+                boolean legionMode = LegionBannerItem.isPlayerInLegionMode(serverPlayer);
+                NetWorkManager.INSTANCE.send(PacketDistributor.ALL.noArg(),
+                        new SyncLegionModePacket(serverPlayer.getUUID(), legionMode));
+                ChatFormatting color = LegionBannerItem.getLegionColor(serverPlayer);
+                int rgb = LegionBannerItem.getColorRGB(color);
+                NetWorkManager.INSTANCE.send(PacketDistributor.ALL.noArg(),
+                        new SyncLegionColorPacket(serverPlayer.getUUID(), rgb));
+            }
+        }
+    }
 
     /**
      * 为生物实体附加控制能力。
@@ -585,19 +643,27 @@ public class MobControllerEvent {
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
-            // 1. 将新玩家的颜色发送给所有在线玩家
+            // 1. 将当前玩家的队伍颜色和军团模式发送给所有在线玩家
             ChatFormatting newPlayerColor = LegionBannerItem.getLegionColor(serverPlayer);
             int newPlayerRgb = LegionBannerItem.getColorRGB(newPlayerColor);
             NetWorkManager.INSTANCE.send(PacketDistributor.ALL.noArg(),
                     new SyncLegionColorPacket(serverPlayer.getUUID(), newPlayerRgb));
 
-            // 2. 将其他在线玩家的颜色发送给新玩家
+            boolean newPlayerLegionMode = LegionBannerItem.isPlayerInLegionMode(serverPlayer);
+            NetWorkManager.INSTANCE.send(PacketDistributor.ALL.noArg(),
+                    new SyncLegionModePacket(serverPlayer.getUUID(), newPlayerLegionMode));
+
+            // 2. 将其他在线玩家的队伍颜色和军团模式发送给当前玩家
             for (ServerPlayer other : serverPlayer.server.getPlayerList().getPlayers()) {
                 if (other == serverPlayer) continue;
                 ChatFormatting otherColor = LegionBannerItem.getLegionColor(other);
                 int otherRgb = LegionBannerItem.getColorRGB(otherColor);
                 NetWorkManager.INSTANCE.send(PacketDistributor.PLAYER.with(() -> serverPlayer),
                         new SyncLegionColorPacket(other.getUUID(), otherRgb));
+
+                boolean otherLegionMode = LegionBannerItem.isPlayerInLegionMode(other);
+                NetWorkManager.INSTANCE.send(PacketDistributor.PLAYER.with(() -> serverPlayer),
+                        new SyncLegionModePacket(other.getUUID(), otherLegionMode));
             }
         }
     }
@@ -607,20 +673,41 @@ public class MobControllerEvent {
      * 条件：目标为军团模式生物，控制者不同，且控制者的队伍颜色不同。
      */
     private static boolean isLegionEnemy(Mob attacker, LivingEntity target) {
-        if (!(target instanceof Mob targetMob)) return false;
-        if (!MobControlledData.isLegionMode(targetMob)) return false;
-
+        if (MobControlledData.isSystemAttack(attacker) && attacker.getTarget() == target) {
+            return true;
+        }
         UUID attackerController = MobControlledData.getControllerUUID(attacker);
-        UUID targetController = MobControlledData.getControllerUUID(targetMob);
-        if (attackerController == null || targetController == null) return false;
-        if (attackerController.equals(targetController)) return false;
+        if (attackerController == null) return false;
 
-        Player attackerOwner = MobControlledData.getController(attacker, attacker.level());
-        Player targetOwner = MobControlledData.getController(targetMob, targetMob.level());
-        if (attackerOwner == null || targetOwner == null) return false;
-        ChatFormatting attackerColor = LegionBannerItem.getLegionColor(attackerOwner);
-        ChatFormatting targetColor = LegionBannerItem.getLegionColor(targetOwner);
-        return attackerColor != targetColor;
+        // 情况1：目标为军团模式生物
+        if (target instanceof Mob targetMob && MobControlledData.isLegionMode(targetMob)) {
+            UUID targetController = MobControlledData.getControllerUUID(targetMob);
+            if (targetController == null) return false;
+            if (attackerController.equals(targetController)) return false;
+
+            Player attackerOwner = MobControlledData.getController(attacker, attacker.level());
+            Player targetOwner = MobControlledData.getController(targetMob, targetMob.level());
+            if (attackerOwner == null || targetOwner == null) return false;
+            ChatFormatting attackerColor = LegionBannerItem.getLegionColor(attackerOwner);
+            ChatFormatting targetColor = LegionBannerItem.getLegionColor(targetOwner);
+            return attackerColor != targetColor;
+        }
+
+        // 情况2：目标为军团模式玩家
+        if (target instanceof Player targetPlayer && LegionBannerItem.isPlayerInLegionMode(targetPlayer)) {
+            // 攻击者必须是受控生物
+            if (!MobControlledData.isControlledEntity(attacker)) return false;
+            // 玩家不能攻击自己的主人
+            if (targetPlayer.getUUID().equals(attackerController)) return false;
+            // 获取控制者的队伍颜色与玩家的队伍颜色比较
+            Player attackerOwner = MobControlledData.getController(attacker, attacker.level());
+            if (attackerOwner == null) return false;
+            ChatFormatting attackerColor = LegionBannerItem.getLegionColor(attackerOwner);
+            ChatFormatting targetColor = LegionBannerItem.getLegionColor(targetPlayer);
+            return attackerColor != targetColor;
+        }
+
+        return false;
     }
 
     /**
@@ -826,6 +913,8 @@ public class MobControllerEvent {
                     NetWorkManager.INSTANCE.sendToServer(new UpdateLegionColorPacket(1));
                 } else if (button == InputConstants.MOUSE_BUTTON_RIGHT) {
                     NetWorkManager.INSTANCE.sendToServer(new UpdateLegionColorPacket(-1));
+                } else if (button == InputConstants.MOUSE_BUTTON_MIDDLE) {
+                    NetWorkManager.INSTANCE.sendToServer(new net.xiaoyu.mob_controller.network.TogglePlayerLegionModePacket());
                 } else {
                     return;
                 }
@@ -940,6 +1029,7 @@ public class MobControllerEvent {
 
     @SubscribeEvent
     public static void onLivingTick(LivingEvent.LivingTickEvent event) {
+        // 掠夺者弩箭修复
         if (event.getEntity() instanceof Pillager pillager && !event.getEntity().level().isClientSide) {
             if (MobControlledData.isControlledEntity(pillager)) {
                 ItemStack mainHand = pillager.getMainHandItem();
@@ -948,13 +1038,52 @@ public class MobControllerEvent {
                 }
             }
         }
+
         if (event.getEntity().level().isClientSide()) return;
         if (!(event.getEntity() instanceof Mob mob)) return;
         if (!MobControlledData.isControlledEntity(mob)) return;
-        // 天境模组未加载则跳过
-        if (!net.minecraftforge.fml.ModList.get().isLoaded("aether")) return;
-        // 执行天境虚空传送逻辑
-        handleAetherVoidTeleport(mob);
+
+        // 天境虚空传送
+        if (net.minecraftforge.fml.ModList.get().isLoaded("aether")) {
+            handleAetherVoidTeleport(mob);
+        }
+
+        // WANDER 模式后备随机游走
+        if (MobControlledData.getControlMode(mob) == MobControlledData.ControlMode.WANDER) {
+            if (mob.getTarget() != null || mob.getNavigation().isInProgress()) {
+                return;
+            }
+
+            CompoundTag data = mob.getPersistentData();
+            int lastWanderTick = data.getInt("mob_controller_last_wander_tick");
+            int currentTick = mob.tickCount;
+            int cooldown = 160;
+
+            if (currentTick - lastWanderTick > cooldown) {
+                data.putInt("mob_controller_last_wander_tick", currentTick);
+
+                net.minecraft.util.RandomSource random = mob.getRandom();
+                double range = 8.0;
+                double minRange = 5.0;
+                double angle = random.nextDouble() * 2 * Math.PI;
+                double distance = minRange + random.nextDouble() * (range - minRange);
+                double dx = Math.cos(angle) * distance;
+                double dz = Math.sin(angle) * distance;
+                double x = mob.getX() + dx;
+                double z = mob.getZ() + dz;
+                double y = mob.getY();
+
+                BlockPos targetPos = new BlockPos((int) x, (int) y, (int) z);
+                if (mob.level().isEmptyBlock(targetPos) || mob.level().getFluidState(targetPos).isSource()) {
+                    mob.getNavigation().moveTo(x, y, z, 0.8);
+                } else {
+                    BlockPos above = targetPos.above();
+                    if (mob.level().isEmptyBlock(above)) {
+                        mob.getNavigation().moveTo(above.getX() + 0.5, above.getY(), above.getZ() + 0.5, 0.8);
+                    }
+                }
+            }
+        }
     }
 
     @Nullable
@@ -1010,6 +1139,31 @@ public class MobControllerEvent {
                         com.aetherteam.aether.event.hooks.DimensionHooks.teleportationTimer = 500;
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 当重生开启且配置允许时，阻止受控生物掉落物品。
+     */
+    @SubscribeEvent
+    public static void onLivingDrops(LivingDropsEvent event) {
+        if (!(event.getEntity() instanceof Mob mob)) return;
+
+        // 仅当重生功能开启且配置要求阻止掉落时生效
+        if (Config.ENABLE_RESPAWN.get() && FeatureConfig.PREVENT_DROPS_ON_RESPAWN.get()) {
+            if (MobControlledData.isControlledEntity(mob)) {
+                event.getDrops().clear();   // 清空所有掉落物
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLivingExperienceDrop(LivingExperienceDropEvent event) {
+        if (!(event.getEntity() instanceof Mob mob)) return;
+        if (Config.ENABLE_RESPAWN.get() && FeatureConfig.PREVENT_DROPS_ON_RESPAWN.get()) {
+            if (MobControlledData.isControlledEntity(mob)) {
+                event.setDroppedExperience(0); // 取消经验掉落
             }
         }
     }

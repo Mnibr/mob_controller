@@ -61,7 +61,11 @@ public class MobController {
         ModEffects.MOB_EFFECTS.register(eventBus);
         ModEffects.POTIONS.register(eventBus);
         CreativeTab.register(eventBus);
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        net.xiaoyu.mob_controller.config.ControlConfig.register();
+        net.xiaoyu.mob_controller.config.TeleportConfig.register();
+        net.xiaoyu.mob_controller.config.ItemConfig.register();
+        net.xiaoyu.mob_controller.config.FeatureConfig.register();
+        net.xiaoyu.mob_controller.config.RidingConfig.register();
         ClientConfig.register();
         MinecraftForge.EVENT_BUS.register(MobControllerEvent.class);
         eventBus.register(MobControlCapabilityRegister.class);
