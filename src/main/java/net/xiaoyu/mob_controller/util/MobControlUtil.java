@@ -34,9 +34,11 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.fml.ModList;
 import net.xiaoyu.mob_controller.Config;
 import net.xiaoyu.mob_controller.MobController;
 import net.xiaoyu.mob_controller.advancement.MobControllerTriggers;
+import net.xiaoyu.mob_controller.config.FeatureConfig;
 import net.xiaoyu.mob_controller.mixin.AccessorSlimeMoveControl;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.Brain;
@@ -887,6 +889,26 @@ public class MobControlUtil {
         return false;
     }
 
+    private static final boolean GOETY_PRESENT = ModList.get().isLoaded("goety");
+
+    /**
+     * 判断生物是否为 Goety 模组的仆从（实现了 IServant 接口）。
+     * 仅在 Goety 模组实际加载时才执行检查，且完全避免反射。
+     *
+     * @param mob 要检查的生物
+     * @return 如果 Goety 已加载且该生物是 IServant 实例，则返回 true；否则返回 false
+     */
+    private static boolean isGoetyServant(Mob mob) {
+        if (!GOETY_PRESENT) {
+            return false;
+        }
+        try {
+            return mob instanceof com.Polarice3.Goety.api.entities.ally.IServant;
+        } catch (NoClassDefFoundError e) {
+            return false;
+        }
+    }
+
     /**
      * 判断生物是否有主人或已被驯服（包括原版驯服、Owner/OwnerUUID NBT 标签，以及 aerwhale 特例）。
      */
@@ -898,6 +920,9 @@ public class MobControlUtil {
         /* if (key != null && key.toString().equals("aether:aerwhale")) {
             return true;
         } */
+        if (isGoetyServant(mob)) {
+            return true;
+        }
         if (mob instanceof TamableAnimal) {
             return true;
         }
@@ -1049,5 +1074,43 @@ public class MobControlUtil {
         ResourceLocation key = EntityType.getKey(mount.getType());
         if (key == null) return Vec3.ZERO;
         return RIDE_OFFSET_CACHE.getOrDefault(key.toString(), Vec3.ZERO);
+    }
+
+    private static final Map<String, Integer> CUSTOM_MAX_COUNTS_CACHE = new ConcurrentHashMap<>();
+    private static boolean customMaxCountsLoaded = false;
+
+    private static void loadCustomMaxCounts() {
+        if (customMaxCountsLoaded) return;
+        synchronized (MobControlUtil.class) {
+            if (customMaxCountsLoaded) return;
+            CUSTOM_MAX_COUNTS_CACHE.clear();
+            for (String entry : FeatureConfig.CUSTOM_MAX_COUNTS.get()) {
+                String[] parts = entry.split(",");
+                if (parts.length == 2) {
+                    try {
+                        int max = Integer.parseInt(parts[1]);
+                        CUSTOM_MAX_COUNTS_CACHE.put(parts[0], max);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            customMaxCountsLoaded = true;
+        }
+    }
+
+    public static int getCustomMaxCount(Mob mob) {
+        loadCustomMaxCounts();
+        ResourceLocation key = EntityType.getKey(mob.getType());
+        if (key == null) return -2;  // 未定义
+        return CUSTOM_MAX_COUNTS_CACHE.getOrDefault(key.toString(), -2);
+    }
+
+    public static boolean hasCustomMaxCount(Mob mob) {
+        return getCustomMaxCount(mob) >= 0;
+    }
+
+    // 配置重载时重置缓存
+    public static void resetCustomMaxCountsCache() {
+        customMaxCountsLoaded = false;
+        CUSTOM_MAX_COUNTS_CACHE.clear();
     }
 }

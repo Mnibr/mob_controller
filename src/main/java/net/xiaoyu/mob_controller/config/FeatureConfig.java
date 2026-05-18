@@ -1,6 +1,9 @@
 package net.xiaoyu.mob_controller.config;
 
 import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.config.ModConfig;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -95,6 +98,13 @@ public class FeatureConfig {
      * 是否在重生开启时阻止受控生物掉落任何物品（包括装备、战利品表物品、经验值）。
      */
     public static final ForgeConfigSpec.BooleanValue PREVENT_DROPS_ON_RESPAWN;
+
+    /**
+     * 自定义生物最大数量限制（覆盖高生命值限制）
+     * 格式：'生物注册名,最大数量'，例如 'minecraft:iron_golem,3'
+     * 若生物在此列表中，则不受高生命值阈值判断，且每个玩家最多控制指定数量。
+     */
+    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> CUSTOM_MAX_COUNTS;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -223,6 +233,14 @@ public class FeatureConfig {
                         "This prevents item duplication issues when respawning.",
                         "Default: true")
                 .define("prevent_drops_on_respawn", true);
+        builder.comment("");
+
+        CUSTOM_MAX_COUNTS = builder
+                .comment("Custom max counts for specific mobs (overrides high health limit).",
+                        "Format: 'entity_id,max_count' (e.g., 'minecraft:iron_golem,3').",
+                        "If a mob is listed here, it is not considered 'high health' and can be controlled up to max_count per player.",
+                        "Set max_count = 0 to completely disallow controlling this mob.")
+                .defineList("custom_max_counts", List.of(), obj -> obj instanceof String);
 
         SPEC = builder.build();
     }
@@ -231,8 +249,8 @@ public class FeatureConfig {
      * 注册本配置文件到 Forge 配置系统。
      */
     public static void register() {
-        net.minecraftforge.fml.ModLoadingContext.get()
-                .registerConfig(net.minecraftforge.fml.config.ModConfig.Type.COMMON, SPEC, "mob_controller/mob_controller-features.toml");
+        ModLoadingContext.get()
+                .registerConfig(ModConfig.Type.COMMON, SPEC, "mob_controller/mob_controller-features.toml");
     }
 
     /**

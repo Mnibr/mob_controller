@@ -3,8 +3,12 @@ package net.xiaoyu.mob_controller;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.server.ServerAboutToStartEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
@@ -15,6 +19,9 @@ import net.xiaoyu.mob_controller.event.MobControllerEvent;
 import net.xiaoyu.mob_controller.network.NetWorkManager;
 import net.xiaoyu.mob_controller.recipe.ConfigRecipeCondition;
 import net.xiaoyu.mob_controller.registry.*;
+import net.xiaoyu.mob_controller.util.HighHealthDatabase;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Mob Controller 模组的主入口类，负责在 Forge 模组加载阶段完成所有子系统的注册与初始化。
@@ -40,6 +47,7 @@ public class MobController {
      * 模组 ID，与 {@code mods.toml} 以及资源路径保持一致。
      */
     public static final String MOD_ID = "mob_controller";
+    public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
 
     /**
      * 模组构造器，由 Forge 在模组初始化阶段调用。
@@ -73,6 +81,16 @@ public class MobController {
         net.minecraftforge.common.crafting.CraftingHelper.register(ConfigRecipeCondition.Serializer.INSTANCE);
         ModSounds.SOUNDS.register(eventBus);
         MobControllerTriggers.register();
+    }
+
+    @SubscribeEvent
+    public static void onServerAboutToStart(ServerAboutToStartEvent event) {
+        HighHealthDatabase.init(event.getServer());
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        HighHealthDatabase.close();
     }
 
     public static void grantRootAdvancementIfNeeded(ServerPlayer player) {

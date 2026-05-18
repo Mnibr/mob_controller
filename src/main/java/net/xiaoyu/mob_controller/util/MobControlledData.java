@@ -73,10 +73,6 @@ import java.util.stream.Collectors;
  */
 public class MobControlledData {
     /**
-     * 玩家 -> 已控制的高生命值生物类型计数。
-     */
-    private static final Map<UUID, Map<EntityType<?>, Integer>> PLAYER_CONTROLLED_HIGH_HEALTH_MOBS = new ConcurrentHashMap<>();
-    /**
      * 待执行的延迟重生任务。键为死亡生物 UUID。
      */
     private static final Map<UUID, PendingRespawnData> PENDING_RESPAWNS = new ConcurrentHashMap<>();
@@ -97,7 +93,7 @@ public class MobControlledData {
      * @param controllerUUID 控制者玩家 UUID
      * @param mob            目标生物
      */
-    public static void addControlledMob(UUID controllerUUID, Mob mob, boolean setPersistent) {
+    public static void addControlledMob(UUID controllerUUID, Mob mob, boolean setPersistent, boolean skipHighHealthRecord) {
         LazyOptional<MobControlCapability> capability = mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY);
         capability.ifPresent(cap -> {
             cap.setControllerUUID(controllerUUID);
@@ -115,12 +111,18 @@ public class MobControlledData {
             mob.setCanPickUpLoot(false);
         }
 
-        addHighHealthRecord(controllerUUID, mob);
+        if (!skipHighHealthRecord) {
+            addHighHealthRecord(controllerUUID, mob);
+        }
     }
 
-    // 修改原有方法，调用重载版本
+    // 原有的双参数方法保持兼容，默认不跳过记录
+    public static void addControlledMob(UUID controllerUUID, Mob mob, boolean setPersistent) {
+        addControlledMob(controllerUUID, mob, setPersistent, false);
+    }
+
     public static void addControlledMob(UUID controllerUUID, Mob mob) {
-        addControlledMob(controllerUUID, mob, true);
+        addControlledMob(controllerUUID, mob, true, false);
     }
 
 
@@ -185,15 +187,19 @@ public class MobControlledData {
      * @return 若目标为高生命值生物且该玩家已控制同类型生物则返回 {@code true}
      */
     public static boolean hasPlayerControlledSameHighHealthMob(UUID playerUUID, Mob mob) {
-        if (!isHighHealthMob(mob)) {
+        String typeId = EntityType.getKey(mob.getType()).toString();
+        int customMax = MobControlUtil.getCustomMaxCount(mob);
+        if (customMax >= 0) {
+            // 配置中明确写了0或正数
+            return !HighHealthDatabase.canControlMore(playerUUID, typeId, customMax);
+        } else if (customMax == -1) {
+            // 配置中明确写了-1（无限制）
             return false;
+        } else {
+            // 未配置，使用默认高生命值限制
+            if (!isHighHealthMob(mob)) return false;
+            return !HighHealthDatabase.canControlMore(playerUUID, typeId, 1);
         }
-
-        if (getControlledHighHealthCount(playerUUID, mob.getType()) > 0) {
-            return true;
-        }
-
-        return hasPendingHighHealthRespawn(playerUUID, mob.getType());
     }
 
     /**
@@ -203,65 +209,43 @@ public class MobControlledData {
      */
     public static void removeControlledMobOnDeath(Mob mob) {
         UUID controllerUUID = getControllerUUID(mob);
-        if (controllerUUID != null) {
+        if (controllerUUID == null) return;
+
+        boolean willRespawn = PENDING_RESPAWNS.containsKey(mob.getUUID());
+
+        if (!willRespawn) {
             removeHighHealthRecord(controllerUUID, mob);
         }
     }
 
     private static void removeHighHealthRecord(UUID controllerUUID, Mob mob) {
-        if (!isHighHealthMob(mob)) {
-            return;
-        }
-
-        Map<EntityType<?>, Integer> controlledMobs = PLAYER_CONTROLLED_HIGH_HEALTH_MOBS.get(controllerUUID);
-        if (controlledMobs != null) {
-            EntityType<?> mobType = mob.getType();
-            Integer currentCount = controlledMobs.get(mobType);
-            if (currentCount == null) {
-                return;
-            }
-
-            if (currentCount <= 1) {
-                controlledMobs.remove(mobType);
-            } else {
-                controlledMobs.put(mobType, currentCount - 1);
-            }
-
-            if (controlledMobs.isEmpty()) {
-                PLAYER_CONTROLLED_HIGH_HEALTH_MOBS.remove(controllerUUID);
-            }
-        }
+        HighHealthDatabase.deleteRecord(controllerUUID, mob.getUUID());
     }
 
     private static void addHighHealthRecord(UUID controllerUUID, Mob mob) {
-        if (!isHighHealthMob(mob)) {
-            return;
+        String typeId = EntityType.getKey(mob.getType()).toString();
+        int customMax = MobControlUtil.getCustomMaxCount(mob);
+
+        int maxAllowed;
+        if (customMax >= 0) {
+            maxAllowed = customMax;
+        } else if (customMax == -1) {
+            maxAllowed = -1;  // 无限制
+        } else {
+            // 未配置，高生命值生物上限1
+            if (!isHighHealthMob(mob)) return;
+            maxAllowed = 1;
         }
 
-        PLAYER_CONTROLLED_HIGH_HEALTH_MOBS.computeIfAbsent(controllerUUID, key -> new HashMap<>())
-                .merge(mob.getType(), 1, Integer::sum);
-    }
-
-    private static int getControlledHighHealthCount(UUID controllerUUID, EntityType<?> mobType) {
-        Map<EntityType<?>, Integer> controlledMobs = PLAYER_CONTROLLED_HIGH_HEALTH_MOBS.get(controllerUUID);
-        if (controlledMobs == null) {
-            return 0;
+        if (!HighHealthDatabase.canControlMore(controllerUUID, typeId, maxAllowed)) {
+            throw new IllegalStateException("Cannot control more than " + maxAllowed + " of " + typeId);
         }
-        return Math.max(0, controlledMobs.getOrDefault(mobType, 0));
-    }
 
-    private static boolean hasPendingHighHealthRespawn(UUID controllerUUID, EntityType<?> mobType) {
-        for (PendingRespawnData data : PENDING_RESPAWNS.values()) {
-            if (!data.controllerUUID().equals(controllerUUID) || !data.highHealthMob()) {
-                continue;
-            }
-
-            Optional<EntityType<?>> pendingType = getPendingMobType(data.mobTypeId());
-            if (pendingType.isPresent() && pendingType.get().equals(mobType)) {
-                return true;
-            }
+        CompoundTag fullNbt = mob.saveWithoutId(new CompoundTag());
+        boolean success = HighHealthDatabase.insertControlledMob(controllerUUID, mob, fullNbt);
+        if (!success) {
+            throw new IllegalStateException("Failed to insert controlled mob record");
         }
-        return false;
     }
 
     private static Optional<EntityType<?>> getPendingMobType(String typeId) {
@@ -514,7 +498,7 @@ public class MobControlledData {
      */
     public static boolean scheduleRespawn(Mob mob, ServerLevel level, String deathCause) {
         if (isSummoned(mob)) {
-            return false;   // 召唤物不重生
+            return false;
         }
         MinecraftServer server = level.getServer();
         ensurePendingRespawnsLoaded(server);
@@ -539,6 +523,9 @@ public class MobControlledData {
 
         String mobTypeId = EntityType.getKey(mob.getType()).toString();
         boolean highHealthMob = isHighHealthMob(mob);
+
+        // ★ 新增：标记数据库中的记录为“重生等待中” ★
+        HighHealthDatabase.markAsRespawning(controllerUUID, mob.getUUID());
 
         PENDING_RESPAWNS.put(
                 mob.getUUID(), new PendingRespawnData(
@@ -609,13 +596,15 @@ public class MobControlledData {
                     respawnedMob.getPersistentData().putBoolean("mob_controller:respawned", true);
                 }
 
-                if (respawnedMob instanceof twilightforest.entity.boss.Lich lich) {
-                    lich.setShieldStrength(6);
-                }
-
                 resetBossPhaseIfNeeded(respawnedMob);
 
-                addControlledMob(data.controllerUUID(), respawnedMob);
+                // ★ 重生：添加控制时跳过高生命记录（数据库已在 markAsRespawning 中保留记录）
+                addControlledMob(data.controllerUUID(), respawnedMob, true, true);
+
+                // ★ 更新数据库：将旧的标记记录更新为新实体的信息 ★
+                CompoundTag newNbt = respawnedMob.saveWithoutId(new CompoundTag());
+                HighHealthDatabase.respawnCompleted(data.controllerUUID(), data.deadMobUUID(), respawnedMob, newNbt);
+
                 respawnedMob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY)
                         .ifPresent(cap -> cap.deserializeNBT(data.capabilityNbt().copy()));
                 clearSystemAttack(respawnedMob);
@@ -638,11 +627,16 @@ public class MobControlledData {
         }
     }
 
-    /**
-     * 重生后重置灾变 Boss 的阶段状态到一阶段。
-     * 仅在灾变模组加载时执行。
-     */
     private static void resetBossPhaseIfNeeded(Mob mob) {
+        resetCataclysmBossPhase(mob);
+        resetTwilightForestBossPhase(mob);
+    }
+
+
+    /**
+     * 重置灾变（Cataclysm）模组的 Boss 阶段状态
+     */
+    private static void resetCataclysmBossPhase(Mob mob) {
         if (!net.minecraftforge.fml.ModList.get().isLoaded("cataclysm")) return;
 
         // Ender Guardian
@@ -683,16 +677,26 @@ public class MobControlledData {
             ignis.setIsBlocking(false);
             ignis.setIsSword(false);
         }
-        // The Leviathan (修正包路径)
+        // The Leviathan
         else if (mob instanceof com.github.L_Ender.cataclysm.entity.AnimationMonster.BossMonsters.The_Leviathan.The_Leviathan_Entity leviathan) {
             leviathan.setMeltDown(false);
             leviathan.setBlastChance(0);
             leviathan.setModeChance(0);
         }
-        // Maledictus (修正包路径)
+        // Maledictus
         else if (mob instanceof com.github.L_Ender.cataclysm.entity.InternalAnimationMonster.IABossMonsters.Maledictus.Maledictus_Entity maledictus) {
             maledictus.setRageMeter(0);
             maledictus.setWeapon(0);
+        }
+    }
+
+    /**
+     * 重置暮色森林钟巫妖的护盾
+     */
+    private static void resetTwilightForestBossPhase(Mob mob) {
+        if (!net.minecraftforge.fml.ModList.get().isLoaded("twilightforest")) return;
+        if (mob instanceof twilightforest.entity.boss.Lich lich) {
+            lich.setShieldStrength(6);
         }
     }
 

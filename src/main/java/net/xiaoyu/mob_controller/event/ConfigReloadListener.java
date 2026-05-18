@@ -1,4 +1,3 @@
-// 路径：net.xiaoyu.mob_controller.event.ConfigReloadListener
 package net.xiaoyu.mob_controller.event;
 
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -15,6 +14,7 @@ public class ConfigReloadListener {
         if (event.getConfig().getType() == ModConfig.Type.COMMON) {
             RideSpeedConfigCache.resetCache();
             MobControlUtil.resetAllRideableCache();
+            MobControlUtil.resetCustomMaxCountsCache(); // 新增
         }
     }
 }

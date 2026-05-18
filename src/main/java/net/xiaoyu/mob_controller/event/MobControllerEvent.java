@@ -40,10 +40,13 @@ import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.EntityMobGriefingEvent;
+import net.minecraftforge.event.entity.EntityTeleportEvent;
 import net.minecraftforge.event.entity.living.*;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.server.ServerAboutToStartEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -62,6 +65,7 @@ import net.xiaoyu.mob_controller.item.RideCommandItem;
 import net.xiaoyu.mob_controller.network.*;
 import net.xiaoyu.mob_controller.registry.ModItems;
 import net.xiaoyu.mob_controller.registry.ModSounds;
+import net.xiaoyu.mob_controller.util.HighHealthDatabase;
 import net.xiaoyu.mob_controller.util.MobControlUtil;
 import net.xiaoyu.mob_controller.util.MobControlledData;
 import net.minecraft.nbt.CompoundTag;
@@ -205,6 +209,17 @@ public class MobControllerEvent {
         }
     }
 
+    @SubscribeEvent
+    public static void onServerAboutToStart(ServerAboutToStartEvent event) {
+        // 初始化高生命值生物数据库
+        HighHealthDatabase.init(event.getServer());
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        HighHealthDatabase.close();
+    }
+
     /**
      * 受控生物死亡时安排延迟重生。
      */
@@ -279,7 +294,7 @@ public class MobControllerEvent {
                 return;
             }
             if (!MobControlledData.isControlledEntity(mob)) return;
-            if (MobControlledData.isSummoned(mob)) return;   // 新增：召唤物不自动回血
+            if (MobControlledData.isSummoned(mob)) return;
             if (MobControlledData.isControlledEntity(mob)) {
                 mob.getCapability(MobControlCapabilityProvider.MOB_CONTROL_CAPABILITY).ifPresent(cap -> {
                     long currentTime = mob.level().getGameTime();
@@ -1166,5 +1181,22 @@ public class MobControllerEvent {
                 event.setDroppedExperience(0); // 取消经验掉落
             }
         }
+    }
+
+    @SubscribeEvent
+    public static void onEntityTeleport(EntityTeleportEvent event) {
+        Entity entity = event.getEntity();
+        if (!(entity instanceof Mob mob)) return;
+        if (!MobControlledData.isControlledEntity(mob)) return;
+        UUID controllerUUID = MobControlledData.getControllerUUID(mob);
+        if (controllerUUID == null) return;
+
+        // 更新数据库中的维度、坐标
+        CompoundTag partialNbt = new CompoundTag(); // 只更新位置和维度，NBT 主体可以留空或仅保存必要字段
+        partialNbt.putString("dimension", mob.level().dimension().location().toString());
+        partialNbt.putInt("x", mob.getBlockX());
+        partialNbt.putInt("y", mob.getBlockY());
+        partialNbt.putInt("z", mob.getBlockZ());
+        HighHealthDatabase.updateMobData(controllerUUID, mob, partialNbt);
     }
 }
